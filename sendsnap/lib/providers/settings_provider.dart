@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -25,6 +26,32 @@ class SavePathNotifier extends StateNotifier<String> {
     state = newPath.trim();
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('save_path', state);
+  }
+}
+
+// ─── Simulator Mode ───
+final simulatorModeProvider =
+    StateNotifierProvider<SimulatorModeNotifier, bool>((ref) {
+  return SimulatorModeNotifier();
+});
+
+class SimulatorModeNotifier extends StateNotifier<bool> {
+  SimulatorModeNotifier() : super(false) {
+    if (!kReleaseMode) {
+      _loadStatus();
+    }
+  }
+
+  Future<void> _loadStatus() async {
+    final prefs = await SharedPreferences.getInstance();
+    state = prefs.getBool('simulator_mode') ?? false;
+  }
+
+  Future<void> toggle(bool value) async {
+    if (kReleaseMode) return; // Always disabled in release
+    state = value;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('simulator_mode', state);
   }
 }
 

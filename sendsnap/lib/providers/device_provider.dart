@@ -6,6 +6,7 @@ import '../models/device.dart';
 import '../services/discovery_service.dart';
 import '../services/offline_connection_service.dart';
 import 'connection_provider.dart';
+import 'settings_provider.dart';
 import 'dart:io';
 
 // ─── Discovery Service Singleton ───
@@ -85,17 +86,59 @@ class NearbyDevicesNotifier extends StateNotifier<List<NearbyDevice>> {
     final wifiDiscovery = _ref.read(discoveryServiceProvider);
     final offlineDiscovery = _ref.read(offlineConnectionServiceProvider);
 
+    // Watch simulator mode to force an update when toggled
+    _ref.listen<bool>(simulatorModeProvider, (prev, next) {
+      _updateState();
+    });
+
     _wifiSubscription = wifiDiscovery.devicesStream.listen((devices) {
-      if (_ref.read(connectionModeProvider) == ConnectionMode.wifi) {
-        state = devices;
-      }
+      _updateState(wifiDevices: devices);
     });
 
     _offlineSubscription = offlineDiscovery.devicesStream.listen((devices) {
-      if (_ref.read(connectionModeProvider) == ConnectionMode.offline) {
-        state = devices;
-      }
+      _updateState(offlineDevices: devices);
     });
+  }
+
+  void _updateState({List<NearbyDevice>? wifiDevices, List<NearbyDevice>? offlineDevices}) {
+    final mode = _ref.read(connectionModeProvider);
+    final isSimulator = _ref.read(simulatorModeProvider);
+    final myName = _ref.read(deviceNameProvider).toLowerCase().trim();
+
+    List<NearbyDevice> currentDevices = [];
+
+    if (mode == ConnectionMode.wifi) {
+      currentDevices = wifiDevices ?? _ref.read(discoveryServiceProvider).currentDevices;
+    } else {
+      currentDevices = offlineDevices ?? _ref.read(offlineConnectionServiceProvider).currentDevices;
+    }
+
+    // Filter out self
+    List<NearbyDevice> filtered = currentDevices
+        .where((d) => d.name.toLowerCase().trim() != myName)
+        .toList();
+
+    // Inject mock devices if simulator mode is ON
+    if (isSimulator) {
+      filtered.addAll([
+        NearbyDevice(
+          id: 'mock_1',
+          name: 'Simulator Pro (Mock)',
+          ip: '127.0.0.1',
+          port: 8080,
+          status: DeviceStatus.ready,
+        ),
+        NearbyDevice(
+          id: 'mock_2',
+          name: 'Virtual Pixel 8 (Mock)',
+          ip: '127.0.0.1',
+          port: 8081,
+          status: DeviceStatus.ready,
+        ),
+      ]);
+    }
+
+    state = filtered;
   }
 
   @override

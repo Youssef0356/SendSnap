@@ -92,11 +92,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
         children: [
           // Connection Mode Banner
           Container(
+            width: double.infinity,
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
             color: connectionMode == ConnectionMode.wifi
                 ? SendSnapTheme.primary.withValues(alpha: 0.1)
                 : SendSnapTheme.success.withValues(alpha: 0.1),
-            child: Row(
+            child: Center(
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
               children: [
                 Icon(
                   connectionMode == ConnectionMode.wifi
@@ -108,23 +111,22 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                   size: 16,
                 ),
                 const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    connectionMode == ConnectionMode.wifi
-                        ? 'High-Speed WiFi Mode Active'
-                        : 'Offline Mode Active (Bluetooth)',
-                    style: TextStyle(
-                      color: connectionMode == ConnectionMode.wifi
-                          ? SendSnapTheme.primary
-                          : SendSnapTheme.success,
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                    ),
+                Text(
+                  connectionMode == ConnectionMode.wifi
+                      ? 'High-Speed WiFi Mode Active'
+                      : 'Offline Mode Active (Bluetooth)',
+                  style: TextStyle(
+                    color: connectionMode == ConnectionMode.wifi
+                        ? SendSnapTheme.primary
+                        : SendSnapTheme.success,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
                   ),
                 ),
               ],
             ),
           ),
+        ),
           const SizedBox(height: 12),
 
           // Your device card

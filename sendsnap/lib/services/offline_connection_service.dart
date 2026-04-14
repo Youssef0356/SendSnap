@@ -29,6 +29,7 @@ class OfflineConnectionService {
   final Map<int, TransferFile> _payloadMap = {}; // Payload ID to TransferFile
 
   Stream<List<NearbyDevice>> get devicesStream => _devicesController.stream;
+  List<NearbyDevice> get currentDevices => _discoveredDevices.values.toList();
 
   Future<void> startBroadcast(String deviceName) async {
     if (_isBroadcasting) return;

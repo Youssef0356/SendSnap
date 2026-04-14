@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -5,6 +6,7 @@ import '../theme/app_theme.dart';
 import '../providers/device_provider.dart';
 import '../providers/settings_provider.dart';
 import '../providers/connection_provider.dart';
+import '../providers/transfer_provider.dart';
 
 /// S6 — Settings Screen
 /// Device name, save location, and about section.
@@ -84,6 +86,37 @@ class SettingsScreen extends ConsumerWidget {
             onTap: () => _launchUrl(
                 'https://play.google.com/store/apps/details?id=com.the356company.sendsnap'),
           ),
+
+          // DEVELOPER TOOLS (only in debug/profile)
+          if (!kReleaseMode) ...[
+            const SizedBox(height: 24),
+            _SectionHeader(label: 'DEVELOPER TOOLS'),
+            _SettingsTile(
+              icon: Icons.bug_report_rounded,
+              iconColor: SendSnapTheme.highlight,
+              title: 'Simulator Mode',
+              subtitle: 'Enable mock devices for testing',
+              trailing: Switch(
+                value: ref.watch(simulatorModeProvider),
+                onChanged: (val) =>
+                    ref.read(simulatorModeProvider.notifier).toggle(val),
+                activeThumbColor: SendSnapTheme.primary,
+              ),
+            ),
+            if (ref.watch(simulatorModeProvider))
+              _SettingsTile(
+                icon: Icons.call_received_rounded,
+                iconColor: SendSnapTheme.primary,
+                title: 'Trigger Mock Incoming',
+                subtitle: 'Simulate a request from a peer',
+                onTap: () {
+                  ref
+                      .read(activeTransferProvider.notifier)
+                      .triggerMockIncomingRequest();
+                  Navigator.pop(context); // Go back home
+                },
+              ),
+          ],
         ],
       ),
     );
