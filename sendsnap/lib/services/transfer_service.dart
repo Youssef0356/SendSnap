@@ -143,7 +143,15 @@ class TransferService {
 
         final savePath = '${saveDir.path}/${file.name}';
         final outputFile = File(savePath);
-        final sink = outputFile.openWrite();
+        IOSink sink;
+        try {
+          sink = outputFile.openWrite();
+        } catch (e) {
+          debugPrint('[SendSnap] Permission denied or write error: $e');
+          ctx.socket.write('WRITE_ERROR:${file.name}\n');
+          await ctx.socket.flush();
+          throw Exception('Permission denied to write ${file.name}');
+        }
 
         int fileReceived = 0;
         DateTime lastSpeedUpdate = DateTime.now();
@@ -207,7 +215,13 @@ class TransferService {
           ));
         }
 
-        await sink.close();
+        try {
+          await sink.close();
+        } catch (e) {
+          ctx.socket.write('WRITE_ERROR:${file.name}\n');
+          await ctx.socket.flush();
+          throw Exception('Failed to finalize file: $e');
+        }
 
         files[i] = file.copyWith(
           status: FileTransferStatus.completed,
@@ -216,7 +230,10 @@ class TransferService {
         );
       }
 
-      // All done
+      // All done - Send final OK signal
+      ctx.socket.write('TRANSFER_OK\n');
+      await ctx.socket.flush();
+
       _emitUpdate(TransferSession(
         id: DateTime.now().millisecondsSinceEpoch.toString(),
         targetDevice: NearbyDevice(
@@ -403,6 +420,39 @@ class TransferService {
         );
       }
 
+      // Wait for receiver's final ACK (TRANSFER_OK or WRITE_ERROR)
+      debugPrint('[SendSnap] Waiting for final ACK from receiver...');
+      final ackCompleter = Completer<String>();
+      final ackBuf = StringBuffer();
+
+      late StreamSubscription ackSub;
+      ackSub = _activeSocket!.listen(
+        (data) {
+          ackBuf.write(utf8.decode(data));
+          if (ackBuf.toString().contains('\n')) {
+            ackSub.cancel();
+            ackCompleter.complete(ackBuf.toString().trim());
+          }
+        },
+        onError: (e) {
+          if (!ackCompleter.isCompleted) ackCompleter.complete('CONNECTION_LOST');
+        },
+        cancelOnError: true,
+      );
+
+      final finalAck = await ackCompleter.future.timeout(
+        const Duration(seconds: 10),
+        onTimeout: () => 'TIMEOUT',
+      );
+
+      debugPrint('[SendSnap] Final ACK received: $finalAck');
+
+      if (finalAck.startsWith('WRITE_ERROR')) {
+        throw Exception('Receiver failed to write file: ${finalAck.split(':').last}');
+      } else if (finalAck != 'TRANSFER_OK') {
+        debugPrint('[SendSnap] Warning: Unexpected final ACK: $finalAck');
+      }
+
       // All done
       _emitUpdate(TransferSession(
         id: DateTime.now().millisecondsSinceEpoch.toString(),
@@ -447,12 +497,23 @@ class TransferService {
   Future<Directory> _getSaveDirectory() async {
     Directory? dir;
     if (Platform.isAndroid) {
-      // Try Downloads first
-      dir = Directory('/storage/emulated/0/Download/SendSnap');
+      try {
+        // Try getting the public downloads directory via path_provider
+        final downloads = await getExternalStorageDirectories(type: StorageDirectory.downloads);
+        if (downloads != null && downloads.isNotEmpty) {
+          dir = Directory('${downloads.first.path}/SendSnap');
+        }
+      } catch (e) {
+        debugPrint('[SendSnap] Could not get external storage via path_provider: $e');
+      }
+      
+      // Fallback to absolute legacy path if path_provider fails or is restrictive
+      dir ??= Directory('/storage/emulated/0/Download/SendSnap');
     } else {
       dir = await getApplicationDocumentsDirectory();
       dir = Directory('${dir.path}/SendSnap');
     }
+    
     if (!await dir.exists()) {
       await dir.create(recursive: true);
     }

@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_mobile_ads/google_mobile_ads.dart';
 import 'theme/app_theme.dart';
 import 'screens/splash_screen.dart';
+import 'screens/role_selection_screen.dart';
 import 'screens/home_screen.dart';
 import 'screens/file_picker_screen.dart';
 import 'screens/transfer_screen.dart';
@@ -39,6 +40,7 @@ class SendSnapApp extends StatelessWidget {
       initialRoute: '/splash',
       routes: {
         '/splash': (context) => const SplashScreen(),
+        '/role': (context) => const RoleSelectionScreen(),
         '/home': (context) => const HomeScreen(),
         '/pick': (context) => const FilePickerScreen(),
         '/transfer': (context) => const TransferScreen(),

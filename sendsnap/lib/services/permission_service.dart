@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:device_info_plus/device_info_plus.dart';
 import 'package:flutter/foundation.dart';
 import 'package:permission_handler/permission_handler.dart';
 
@@ -9,19 +10,14 @@ class PermissionService {
   Future<bool> requestAllPermissions() async {
     final results = <Permission, PermissionStatus>{};
 
-    // Storage permissions
     if (Platform.isAndroid) {
-      // Bluetooth and Location for Nearby Connections
-      results[Permission.bluetooth] = await Permission.bluetooth.request();
-      results[Permission.bluetoothAdvertise] = await Permission.bluetoothAdvertise.request();
-      results[Permission.bluetoothConnect] = await Permission.bluetoothConnect.request();
-      results[Permission.bluetoothScan] = await Permission.bluetoothScan.request();
-      results[Permission.location] = await Permission.location.request();
-
       final androidVersion = await _getAndroidVersion();
 
+      // Permissions required for discovery and networking
+      results[Permission.location] = await Permission.location.request();
+      
       if (androidVersion >= 33) {
-        // Android 13+ uses granular media permissions
+        // Android 13+ uses granular media permissions + Nearby WiFi
         results[Permission.photos] = await Permission.photos.request();
         results[Permission.videos] = await Permission.videos.request();
         results[Permission.audio] = await Permission.audio.request();
@@ -32,16 +28,26 @@ class PermissionService {
         results[Permission.manageExternalStorage] =
             await Permission.manageExternalStorage.request();
       } else {
-        // Android 10 and below
+        // Android 10 and below - needs legacy storage permission
         results[Permission.storage] = await Permission.storage.request();
       }
+
+      // Bluetooth for Offline Mode (Nearby Connections)
+      results[Permission.bluetooth] = await Permission.bluetooth.request();
+      results[Permission.bluetoothAdvertise] = await Permission.bluetoothAdvertise.request();
+      results[Permission.bluetoothConnect] = await Permission.bluetoothConnect.request();
+      results[Permission.bluetoothScan] = await Permission.bluetoothScan.request();
     }
 
+    // Diagnostic logging
     for (final entry in results.entries) {
       debugPrint('[SendSnap] Permission ${entry.key}: ${entry.value}');
     }
 
-    return true; // Non-blocking — app works with partial permissions
+    // Return true only if the primary storage/media category is granted
+    // This allows the app to proceed even if non-critical (like location) is denied,
+    // though storage is essential for writing received files.
+    return await hasStoragePermission();
   }
 
   /// Check if we have storage read permission.
@@ -77,13 +83,14 @@ class PermissionService {
 
   Future<int> _getAndroidVersion() async {
     try {
-      // Simple approach — parse from Platform
-      final release = Platform.operatingSystemVersion;
-      debugPrint('[SendSnap] OS version: $release');
-      // Default to 33 to use the safer/newer permission model
-      return 33;
-    } catch (_) {
-      return 33;
+      if (Platform.isAndroid) {
+        final androidInfo = await DeviceInfoPlugin().androidInfo;
+        return androidInfo.version.sdkInt;
+      }
+      return 0; // Not Android
+    } catch (e) {
+      debugPrint('[SendSnap] Error detecting Android version: $e');
+      return 29; // Safer fallback for older logic
     }
   }
 }

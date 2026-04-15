@@ -4,8 +4,6 @@ import '../theme/app_theme.dart';
 import '../widgets/pulsing_dot.dart';
 import '../services/permission_service.dart';
 import '../providers/device_provider.dart';
-import '../providers/transfer_provider.dart';
-import '../providers/connection_provider.dart';
 
 /// S1 — Splash Screen
 /// Brand first impression. Shows logo + tagline while initializing services.
@@ -47,50 +45,60 @@ class _SplashScreenState extends ConsumerState<SplashScreen>
   Future<void> _initializeAndNavigate() async {
     // Run background initialization
     await Future.wait([
-      _initPermissions(),
-      _initServices(),
+      _checkPermissions(),
+      _initCoreServices(),
       Future.delayed(const Duration(milliseconds: 1800)),
     ]);
-
-    if (mounted) {
-      Navigator.of(context).pushReplacementNamed('/home');
-    }
   }
 
-  Future<void> _initPermissions() async {
+  Future<void> _checkPermissions() async {
     final permissionService = PermissionService();
-    await permissionService.requestAllPermissions();
+    final granted = await permissionService.requestAllPermissions();
+    if (!granted && mounted) {
+      _showPermissionRequiredDialog();
+    } else if (mounted) {
+      Navigator.of(context).pushReplacementNamed('/role');
+    }
   }
 
-  Future<void> _initServices() async {
-    try {
-      // Small delay to ensure connectivity_plus completes its first read
-      await Future.delayed(const Duration(milliseconds: 300));
+  Future<void> _initCoreServices() async {
+    await ref.read(deviceNameProvider.notifier).ensureLoaded();
+    // Service activation now happens in RoleSelectionScreen
+  }
 
-      await ref.read(deviceNameProvider.notifier).ensureLoaded();
-
-      final mode = ref.read(connectionModeProvider);
-      final deviceName = ref.read(deviceNameProvider);
-
-      if (mode == ConnectionMode.wifi) {
-        // Start TCP server & mDNS broadcast
-        final transferService = ref.read(transferServiceProvider);
-        final port = await transferService.startServer();
-        final discoveryService = ref.read(discoveryServiceProvider);
-        await discoveryService.startBroadcast(deviceName, port);
-        await discoveryService.startDiscovery();
-      } else {
-        // Start Nearby Connections
-        final offlineService = ref.read(offlineConnectionServiceProvider);
-        await offlineService.startBroadcast(deviceName);
-        await offlineService.startDiscovery();
-      }
-
-      // Update broadcast status
-      ref.read(broadcastStatusProvider.notifier).state = true;
-    } catch (e) {
-      debugPrint('[SendSnap] Init error: $e');
-    }
+  void _showPermissionRequiredDialog() {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        backgroundColor: SendSnapTheme.surface,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Text(
+          'Permissions Required',
+          style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+        ),
+        content: const Text(
+          'SendSnap needs storage permissions to save received files and WiFi/Bluetooth permissions to discover devices.',
+          style: TextStyle(color: Colors.white70),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(), // User will be stuck but aware
+            child: const Text('I UNDERSTAND'),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              await PermissionService().openSettings();
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: SendSnapTheme.primary,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            ),
+            child: const Text('OPEN SETTINGS'),
+          ),
+        ],
+      ),
+    );
   }
 
   @override

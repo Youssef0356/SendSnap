@@ -13,6 +13,7 @@ class DiscoveryService {
   nsd.Discovery? _discovery;
   String? _curDeviceName;
   Set<String> _localAddresses = const {};
+  Timer? _reannounceTimer;
 
   final _devicesController = StreamController<List<NearbyDevice>>.broadcast();
   final Map<String, NearbyDevice> _discoveredDevices = {};
@@ -43,6 +44,18 @@ class DiscoveryService {
       _curDeviceName = deviceName;
       _isBroadcasting = true;
       debugPrint('[SendSnap] Broadcasting as "$deviceName" on port $port');
+
+      // Re-announce every 45s to combat mDNS packet loss/cache issues
+      _reannounceTimer?.cancel();
+      _reannounceTimer = Timer.periodic(const Duration(seconds: 45), (_) async {
+        if (_isBroadcasting) {
+          debugPrint('[SendSnap] Re-announcing service...');
+          final name = _curDeviceName;
+          final p = _broadcastPort;
+          await stopBroadcast();
+          if (name != null) await startBroadcast(name, p);
+        }
+      });
     } catch (e) {
       debugPrint('[SendSnap] Failed to start broadcast: $e');
       rethrow;
@@ -54,6 +67,8 @@ class DiscoveryService {
     if (!_isBroadcasting || _registration == null) return;
 
     try {
+      _reannounceTimer?.cancel();
+      _reannounceTimer = null;
       await nsd.unregister(_registration!);
       _registration = null;
       _curDeviceName = null;

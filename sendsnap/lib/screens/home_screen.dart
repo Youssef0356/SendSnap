@@ -5,6 +5,7 @@ import '../models/device.dart';
 import '../providers/device_provider.dart';
 import '../providers/transfer_provider.dart';
 import '../providers/connection_provider.dart';
+import '../providers/role_provider.dart';
 import '../widgets/device_card.dart';
 import '../widgets/banner_ad_widget.dart';
 import 'incoming_screen.dart';
@@ -29,6 +30,58 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
       duration: const Duration(milliseconds: 2000),
       vsync: this,
     )..repeat();
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _checkEmulator();
+    });
+  }
+
+  void _checkEmulator() {
+    final devices = ref.read(nearbyDevicesProvider);
+    for (final device in devices) {
+      if (device.ip.startsWith('10.0.2.') || device.ip.startsWith('10.0.3.')) {
+        _showEmulatorWarning();
+        break;
+      }
+    }
+  }
+
+  void _showEmulatorWarning() {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: const Row(
+          children: [
+            Icon(Icons.warning_amber_rounded, color: Colors.white),
+            SizedBox(width: 12),
+            Expanded(child: Text('Potential Emulator detected. Network transfers may fail due to NAT.')),
+          ],
+        ),
+        backgroundColor: Colors.orange.shade800,
+        behavior: SnackBarBehavior.floating,
+        duration: const Duration(seconds: 5),
+      ),
+    );
+  }
+
+  Future<void> _switchRole() async {
+    final discoveryService = ref.read(discoveryServiceProvider);
+    final transferService = ref.read(transferServiceProvider);
+    final offlineService = ref.read(offlineConnectionServiceProvider);
+    
+    // Stop everything
+    await discoveryService.stopDiscovery();
+    await discoveryService.stopBroadcast();
+    await transferService.dispose();
+    await offlineService.stopDiscovery();
+    await offlineService.stopBroadcast();
+    
+    ref.read(broadcastStatusProvider.notifier).state = false;
+    ref.read(transferRoleProvider.notifier).state = TransferRole.unset;
+    
+    if (mounted) {
+      Navigator.of(context).pushReplacementNamed('/role');
+    }
   }
 
   @override
@@ -43,6 +96,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     final nearbyDevices = ref.watch(nearbyDevicesProvider);
     final isBroadcasting = ref.watch(broadcastStatusProvider);
     final connectionMode = ref.watch(connectionModeProvider);
+    final role = ref.watch(transferRoleProvider);
 
     // Listen for incoming requests
     ref.listen<dynamic>(incomingRequestProvider, (prev, next) {
@@ -80,6 +134,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
           ],
         ),
         actions: [
+          TextButton.icon(
+            onPressed: _switchRole,
+            icon: const Icon(Icons.sync_rounded, size: 18),
+            label: const Text('Switch Role', style: TextStyle(fontSize: 12)),
+            style: TextButton.styleFrom(
+              foregroundColor: SendSnapTheme.accent.withValues(alpha: 0.8),
+            ),
+          ),
           IconButton(
             onPressed: () => Navigator.pushNamed(context, '/settings'),
             icon: const Icon(Icons.settings_rounded, size: 22),
@@ -184,25 +246,27 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
 
           // Device list or empty state
           Expanded(
-            child: nearbyDevices.isEmpty
-                ? _buildEmptyState(connectionMode)
-                : ListView.builder(
-                    padding: const EdgeInsets.only(bottom: 80),
-                    itemCount: nearbyDevices.length,
-                    itemBuilder: (context, index) {
-                      final device = nearbyDevices[index];
-                      return DeviceCard(
-                        device: device,
-                        onSend: () {
-                          Navigator.pushNamed(
-                            context,
-                            '/pick',
-                            arguments: device,
+            child: role == TransferRole.receiver
+                ? _buildReceiverState(isBroadcasting)
+                : nearbyDevices.isEmpty
+                    ? _buildEmptyState(connectionMode)
+                    : ListView.builder(
+                        padding: const EdgeInsets.only(bottom: 80),
+                        itemCount: nearbyDevices.length,
+                        itemBuilder: (context, index) {
+                          final device = nearbyDevices[index];
+                          return DeviceCard(
+                            device: device,
+                            onSend: () {
+                              Navigator.pushNamed(
+                                context,
+                                '/pick',
+                                arguments: device,
+                              );
+                            },
                           );
                         },
-                      );
-                    },
-                  ),
+                      ),
           ),
 
           // AdMob banner
@@ -270,6 +334,50 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
               style: TextStyle(
                 color: SendSnapTheme.accent.withValues(alpha: 0.5),
                 fontSize: 13,
+                height: 1.5,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildReceiverState(bool isBroadcasting) {
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            padding: const EdgeInsets.all(24),
+            decoration: BoxDecoration(
+              color: SendSnapTheme.primary.withValues(alpha: 0.1),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(
+              Icons.wifi_tethering_rounded,
+              color: SendSnapTheme.primary,
+              size: 48,
+            ),
+          ),
+          const SizedBox(height: 24),
+          Text(
+            isBroadcasting ? 'Waiting for files...' : 'Starting receiver...',
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 18,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 12),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 48),
+            child: Text(
+              'Other devices can now see "${ref.watch(deviceNameProvider)}" and send files to you.',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: SendSnapTheme.accent.withValues(alpha: 0.6),
+                fontSize: 14,
                 height: 1.5,
               ),
             ),
