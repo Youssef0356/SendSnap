@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:nsd/nsd.dart' as nsd;
 import '../models/device.dart';
@@ -11,6 +12,7 @@ class DiscoveryService {
   nsd.Registration? _registration;
   nsd.Discovery? _discovery;
   String? _curDeviceName;
+  Set<String> _localAddresses = const {};
 
   final _devicesController = StreamController<List<NearbyDevice>>.broadcast();
   final Map<String, NearbyDevice> _discoveredDevices = {};
@@ -29,6 +31,7 @@ class DiscoveryService {
     if (_isBroadcasting) return;
 
     try {
+      await _refreshLocalAddresses();
       _broadcastPort = port;
       _registration = await nsd.register(
         nsd.Service(
@@ -66,13 +69,13 @@ class DiscoveryService {
     if (_isDiscovering) return;
 
     try {
+      await _refreshLocalAddresses();
       _discovery = await nsd.startDiscovery(_serviceType, autoResolve: true);
       _isDiscovering = true;
       debugPrint('[SendSnap] Started discovering nearby devices');
 
       _discovery!.addServiceListener((service, status) {
-        // Filter out our own device
-        if (service.name == _curDeviceName) return;
+        if (_isOwnService(service)) return;
 
         final id = '${service.name}_${service.host}';
 
@@ -118,6 +121,37 @@ class DiscoveryService {
 
   void _emitDevices() {
     _devicesController.add(_discoveredDevices.values.toList());
+  }
+
+  bool _isOwnService(nsd.Service service) {
+    final host = service.host;
+    if (host == null) return false;
+
+    final sameAddress = _localAddresses.contains(host);
+    final samePort = service.port == _broadcastPort;
+    if (sameAddress && samePort) {
+      return true;
+    }
+
+    final sameName = service.name?.toLowerCase().trim() ==
+        _curDeviceName?.toLowerCase().trim();
+    return sameName && sameAddress;
+  }
+
+  Future<void> _refreshLocalAddresses() async {
+    try {
+      final interfaces = await NetworkInterface.list(
+        type: InternetAddressType.IPv4,
+        includeLoopback: false,
+      );
+      _localAddresses = interfaces
+          .expand((iface) => iface.addresses)
+          .map((addr) => addr.address)
+          .toSet();
+    } catch (e) {
+      debugPrint('[SendSnap] Failed to read local interfaces: $e');
+      _localAddresses = const {};
+    }
   }
 
   /// Clean up resources.

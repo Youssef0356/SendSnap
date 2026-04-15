@@ -66,7 +66,9 @@ class _SplashScreenState extends ConsumerState<SplashScreen>
     try {
       // Small delay to ensure connectivity_plus completes its first read
       await Future.delayed(const Duration(milliseconds: 300));
-      
+
+      await ref.read(deviceNameProvider.notifier).ensureLoaded();
+
       final mode = ref.read(connectionModeProvider);
       final deviceName = ref.read(deviceNameProvider);
 

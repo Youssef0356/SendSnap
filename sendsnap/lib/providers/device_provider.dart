@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:device_info_plus/device_info_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -30,36 +31,70 @@ final deviceNameProvider =
 });
 
 class DeviceNameNotifier extends StateNotifier<String> {
+  final Completer<void> _loadCompleter = Completer<void>();
+
   DeviceNameNotifier() : super('My Device') {
     _loadName();
   }
 
   Future<void> _loadName() async {
-    final prefs = await SharedPreferences.getInstance();
-    final savedName = prefs.getString('device_name');
-    if (savedName != null && savedName.isNotEmpty) {
-      state = savedName;
-      return;
-    }
-
-    // Default to system device name
     try {
-      if (Platform.isAndroid) {
-        final info = await DeviceInfoPlugin().androidInfo;
-        state = '${info.brand} ${info.model}';
-      } else if (Platform.isIOS) {
-        final info = await DeviceInfoPlugin().iosInfo;
-        state = info.name;
+      final prefs = await SharedPreferences.getInstance();
+
+      // Ensure we have a persistent unique ID for this device
+      String? uniqueId = prefs.getString('device_unique_id');
+      if (uniqueId == null || uniqueId.length != 4) {
+        const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
+        uniqueId = List.generate(
+          4,
+          (index) => chars[Random().nextInt(chars.length)],
+        ).join();
+        await prefs.setString('device_unique_id', uniqueId);
       }
-    } catch (_) {
-      state = 'My Device';
+
+      final savedName = prefs.getString('device_name');
+      if (savedName != null && savedName.isNotEmpty) {
+        state = savedName;
+        return;
+      }
+
+      // Default to system device name + unique ID
+      String baseName = 'My Device';
+      try {
+        if (Platform.isAndroid) {
+          final info = await DeviceInfoPlugin().androidInfo;
+          baseName = '${info.brand} ${info.model}';
+        } else if (Platform.isIOS) {
+          final info = await DeviceInfoPlugin().iosInfo;
+          baseName = info.name;
+        }
+      } catch (_) {
+        baseName = 'My Device';
+      }
+
+      state = '$baseName ($uniqueId)';
+    } finally {
+      if (!_loadCompleter.isCompleted) {
+        _loadCompleter.complete();
+      }
     }
   }
 
+  Future<void> ensureLoaded() => _loadCompleter.future;
+
   Future<void> updateName(String newName) async {
     if (newName.trim().isEmpty) return;
-    state = newName.trim();
+    
     final prefs = await SharedPreferences.getInstance();
+    final uniqueId = prefs.getString('device_unique_id') ?? '????';
+    
+    // Ensure the suffix is preserved if not already present
+    String finalName = newName.trim();
+    if (!finalName.endsWith('($uniqueId)')) {
+      finalName = '$finalName ($uniqueId)';
+    }
+    
+    state = finalName;
     await prefs.setString('device_name', state);
   }
 }
@@ -91,6 +126,11 @@ class NearbyDevicesNotifier extends StateNotifier<List<NearbyDevice>> {
       _updateState();
     });
 
+    // Watch name changes to update filtering
+    _ref.listen<String>(deviceNameProvider, (prev, next) {
+      _updateState();
+    });
+
     _wifiSubscription = wifiDiscovery.devicesStream.listen((devices) {
       _updateState(wifiDevices: devices);
     });
@@ -113,10 +153,10 @@ class NearbyDevicesNotifier extends StateNotifier<List<NearbyDevice>> {
       currentDevices = offlineDevices ?? _ref.read(offlineConnectionServiceProvider).currentDevices;
     }
 
-    // Filter out self
-    List<NearbyDevice> filtered = currentDevices
-        .where((d) => d.name.toLowerCase().trim() != myName)
-        .toList();
+    // Filter out self using matching logic
+    List<NearbyDevice> filtered = currentDevices.where((d) {
+      return d.name.toLowerCase().trim() != myName;
+    }).toList();
 
     // Inject mock devices if simulator mode is ON
     if (isSimulator) {

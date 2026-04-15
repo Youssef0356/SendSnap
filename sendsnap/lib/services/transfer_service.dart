@@ -1,10 +1,22 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
+import 'package:async/async.dart';
 import 'package:path_provider/path_provider.dart';
 import '../models/device.dart';
 import '../models/transfer_file.dart';
+
+class _IncomingSocketContext {
+  final Socket socket;
+  final StreamQueue<Uint8List> queue;
+
+  // Bytes already read from the stream but not yet consumed by higher-level parsing.
+  Uint8List pending = Uint8List(0);
+
+  _IncomingSocketContext(this.socket) : queue = StreamQueue<Uint8List>(socket);
+}
 
 /// Handles peer-to-peer file transfer over TCP sockets.
 /// Sender connects to receiver's server, sends metadata, waits for accept,
@@ -58,30 +70,10 @@ class TransferService {
     debugPrint('[SendSnap] Incoming connection from ${socket.remoteAddress.address}:${socket.remotePort}');
 
     try {
-      // Read the metadata header (first message)
-      final completer = Completer<String>();
-      final buffer = StringBuffer();
-
-      late StreamSubscription subscription;
-      subscription = socket.listen(
-        (data) {
-          buffer.write(utf8.decode(data));
-          final content = buffer.toString();
-          // Look for header terminator
-          if (content.contains('\n---END_HEADER---\n')) {
-            subscription.cancel();
-            final headerStr = content.split('\n---END_HEADER---\n').first;
-            completer.complete(headerStr);
-          }
-        },
-        onError: (e) {
-          if (!completer.isCompleted) completer.completeError(e);
-        },
-        cancelOnError: true,
-      );
+      final ctx = _IncomingSocketContext(socket);
 
       // Wait for the header with timeout
-      final headerJson = await completer.future.timeout(
+      final headerJson = await _readHeader(ctx).timeout(
         const Duration(seconds: 10),
         onTimeout: () {
           socket.destroy();
@@ -101,7 +93,7 @@ class TransferService {
         senderIp: socket.remoteAddress.address,
         senderPort: socket.remotePort,
         files: files,
-        socket: socket,
+        socket: ctx,
       );
 
       onIncomingRequest?.call(request);
@@ -113,12 +105,14 @@ class TransferService {
 
   /// Accept an incoming file transfer request.
   Future<void> acceptTransfer(IncomingRequest request) async {
-    final socket = request.socket as Socket;
+    final ctx = request.socket is _IncomingSocketContext
+        ? request.socket as _IncomingSocketContext
+        : _IncomingSocketContext(request.socket as Socket);
 
     try {
       // Send acceptance signal
-      socket.write('ACCEPT\n');
-      await socket.flush();
+      ctx.socket.write('ACCEPT\n');
+      await ctx.socket.flush();
       debugPrint('[SendSnap] Accepted transfer from ${request.senderName}');
 
       // Prepare save directory
@@ -152,77 +146,67 @@ class TransferService {
         final sink = outputFile.openWrite();
 
         int fileReceived = 0;
-        final fileCompleter = Completer<void>();
         DateTime lastSpeedUpdate = DateTime.now();
         int lastSpeedBytes = 0;
         double currentSpeed = 0;
 
-        late StreamSubscription fileSub;
-        fileSub = socket.listen(
-          (data) {
-            // Check for file separator
-            final str = utf8.decode(data, allowMalformed: true);
-            if (str.contains('\n---FILE_END---\n')) {
-              final parts = str.split('\n---FILE_END---\n');
-              if (parts.first.isNotEmpty) {
-                final remaining = utf8.encode(parts.first);
-                sink.add(remaining);
-                fileReceived += remaining.length;
-              }
-              fileSub.cancel();
-              if (!fileCompleter.isCompleted) fileCompleter.complete();
-              return;
-            }
+        // Read exactly `file.size` bytes. This avoids corrupting binary files and
+        // works correctly regardless of TCP packet boundaries.
+        int remaining = file.size;
+        while (remaining > 0) {
+          final Uint8List chunk = await _nextBytes(ctx);
+          if (chunk.isEmpty) continue;
 
-            sink.add(data);
-            fileReceived += data.length;
-            totalReceived += data.length;
+          if (chunk.length <= remaining) {
+            sink.add(chunk);
+            fileReceived += chunk.length;
+            totalReceived += chunk.length;
+            remaining -= chunk.length;
+          } else {
+            sink.add(chunk.sublist(0, remaining));
+            fileReceived += remaining;
+            totalReceived += remaining;
+            ctx.pending = Uint8List.fromList(chunk.sublist(remaining));
+            remaining = 0;
+          }
 
-            // Calculate speed every 500ms
-            final now = DateTime.now();
-            if (now.difference(lastSpeedUpdate).inMilliseconds >= 500) {
-              currentSpeed = (fileReceived - lastSpeedBytes) /
-                  now.difference(lastSpeedUpdate).inMilliseconds *
-                  1000;
-              lastSpeedBytes = fileReceived;
-              lastSpeedUpdate = now;
-            }
+          // Calculate speed every 500ms
+          final now = DateTime.now();
+          if (now.difference(lastSpeedUpdate).inMilliseconds >= 500) {
+            currentSpeed = (fileReceived - lastSpeedBytes) /
+                now.difference(lastSpeedUpdate).inMilliseconds *
+                1000;
+            lastSpeedBytes = fileReceived;
+            lastSpeedUpdate = now;
+          }
 
-            files[i] = file.copyWith(
-              status: FileTransferStatus.transferring,
-              progress: fileReceived / file.size,
-            );
+          files[i] = file.copyWith(
+            status: FileTransferStatus.transferring,
+            progress: fileReceived / file.size,
+          );
 
-            final remainingBytes = totalSize - totalReceived;
-            final eta = currentSpeed > 0
-                ? Duration(seconds: (remainingBytes / currentSpeed).round())
-                : null;
+          final remainingBytes = totalSize - totalReceived;
+          final eta = currentSpeed > 0
+              ? Duration(seconds: (remainingBytes / currentSpeed).round())
+              : null;
 
-            _emitUpdate(TransferSession(
-              id: DateTime.now().millisecondsSinceEpoch.toString(),
-              targetDevice: NearbyDevice(
-                id: request.senderIp,
-                name: request.senderName,
-                ip: request.senderIp,
-                port: request.senderPort,
-              ),
-              files: List.from(files),
-              direction: TransferDirection.receiving,
-              overallProgress: totalReceived / totalSize,
-              speed: currentSpeed,
-              timeRemaining: eta,
-              status: TransferSessionStatus.transferring,
-            ));
-          },
-          onError: (e) {
-            if (!fileCompleter.isCompleted) {
-              fileCompleter.completeError(e);
-            }
-          },
-          cancelOnError: true,
-        );
+          _emitUpdate(TransferSession(
+            id: DateTime.now().millisecondsSinceEpoch.toString(),
+            targetDevice: NearbyDevice(
+              id: request.senderIp,
+              name: request.senderName,
+              ip: request.senderIp,
+              port: request.senderPort,
+            ),
+            files: List.from(files),
+            direction: TransferDirection.receiving,
+            overallProgress: totalReceived / totalSize,
+            speed: currentSpeed,
+            timeRemaining: eta,
+            status: TransferSessionStatus.transferring,
+          ));
+        }
 
-        await fileCompleter.future;
         await sink.close();
 
         files[i] = file.copyWith(
@@ -248,20 +232,29 @@ class TransferService {
       ));
 
       onTransferComplete?.call();
-      socket.destroy();
+      await ctx.queue.cancel();
+      ctx.socket.destroy();
     } catch (e) {
       debugPrint('[SendSnap] Transfer receive error: $e');
       onError?.call('Transfer failed: $e');
-      socket.destroy();
+      try {
+        await ctx.queue.cancel();
+      } catch (_) {}
+      ctx.socket.destroy();
     }
   }
 
   /// Decline an incoming file transfer request.
   void declineTransfer(IncomingRequest request) {
-    final socket = request.socket as Socket;
+    final ctx =
+        request.socket is _IncomingSocketContext ? request.socket as _IncomingSocketContext : null;
+    final socket = ctx?.socket ?? request.socket as Socket;
     try {
       socket.write('REJECT\n');
-      socket.flush().then((_) => socket.destroy());
+      socket.flush().whenComplete(() {
+        ctx?.queue.cancel()?.catchError((_) {});
+        socket.destroy();
+      });
       debugPrint('[SendSnap] Declined transfer from ${request.senderName}');
     } catch (e) {
       socket.destroy();
@@ -404,10 +397,6 @@ class TransferService {
           ));
         }
 
-        // Send file separator
-        _activeSocket!.write('\n---FILE_END---\n');
-        await _activeSocket!.flush();
-
         mutableFiles[i] = file.copyWith(
           status: FileTransferStatus.completed,
           progress: 1.0,
@@ -478,4 +467,53 @@ class TransferService {
     _isListening = false;
     debugPrint('[SendSnap] Transfer service disposed');
   }
+}
+
+Future<String> _readHeader(_IncomingSocketContext ctx) async {
+  final terminator = utf8.encode('\n---END_HEADER---\n');
+  final builder = BytesBuilder(copy: false);
+
+  if (ctx.pending.isNotEmpty) {
+    builder.add(ctx.pending);
+    ctx.pending = Uint8List(0);
+  }
+
+  while (true) {
+    final bytes = builder.toBytes();
+    final idx = _indexOfSubsequence(bytes, terminator);
+    if (idx != -1) {
+      final headerBytes = bytes.sublist(0, idx);
+      final remaining = bytes.sublist(idx + terminator.length);
+      ctx.pending = Uint8List.fromList(remaining);
+      return utf8.decode(headerBytes);
+    }
+
+    builder.add(await ctx.queue.next);
+  }
+}
+
+Future<Uint8List> _nextBytes(_IncomingSocketContext ctx) async {
+  if (ctx.pending.isNotEmpty) {
+    final bytes = ctx.pending;
+    ctx.pending = Uint8List(0);
+    return bytes;
+  }
+  return await ctx.queue.next;
+}
+
+int _indexOfSubsequence(Uint8List data, List<int> pattern) {
+  if (pattern.isEmpty) return 0;
+  if (data.length < pattern.length) return -1;
+
+  for (int i = 0; i <= data.length - pattern.length; i++) {
+    bool match = true;
+    for (int j = 0; j < pattern.length; j++) {
+      if (data[i + j] != pattern[j]) {
+        match = false;
+        break;
+      }
+    }
+    if (match) return i;
+  }
+  return -1;
 }

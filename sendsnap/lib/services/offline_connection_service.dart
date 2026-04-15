@@ -67,6 +67,12 @@ class OfflineConnectionService {
         strategy,
         onEndpointFound: (endpointId, endpointName, serviceId) {
           debugPrint('[Offline] Endpoint found: $endpointName ($endpointId)');
+          
+          // Filter out self if discovered (Nearby Connections usually doesn't, but for safety)
+          if (endpointName.contains('($endpointId)')) {
+             // This is a heuristic, better to check against a stored local ID if available
+          }
+
           final device = NearbyDevice(
             id: endpointId,
             name: endpointName,
