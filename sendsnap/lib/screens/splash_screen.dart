@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import '../services/permission_handler.dart';
+import '../services/permission_service.dart';
 import '../services/ads_service.dart';
 import '../config/constants.dart';
 
@@ -22,7 +22,7 @@ class _SplashScreenState extends State<SplashScreen> {
     await AdsService().initialize();
 
     // 2. Request Permissions
-    await PermissionHandler.requestAllPermissions();
+    await PermissionService().requestAllPermissions();
 
     // 3. Navigate to Home
     if (mounted) {

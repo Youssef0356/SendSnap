@@ -46,14 +46,17 @@ class _RadarWidgetState extends State<RadarWidget> with SingleTickerProviderStat
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: AppSpacing.xl),
+    return SizedBox(
+      height: 380, // Fixed height to prevent vertical shifts
       child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Stack(
-            alignment: Alignment.center,
-            children: [
-              if (widget.active)
+          SizedBox(
+            height: 280, // Space for the 3 rings
+            child: Stack(
+              alignment: Alignment.center,
+              children: [
+                if (widget.active)
                 ...List.generate(3, (index) {
                   return AnimatedBuilder(
                     animation: _controller,
@@ -93,6 +96,7 @@ class _RadarWidgetState extends State<RadarWidget> with SingleTickerProviderStat
               ),
             ],
           ),
+        ),
           if (widget.active) ...[
             const SizedBox(height: AppSpacing.l),
             Text(

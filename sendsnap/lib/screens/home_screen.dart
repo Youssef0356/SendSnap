@@ -32,53 +32,68 @@ class HomeScreen extends StatelessWidget {
                     _buildHeader(context, devProv),
                     const SizedBox(height: AppSpacing.xl),
                     
-                    if (isBusy)
-                      Center(
-                        child: RadarWidget(
-                          active: true,
-                          label: devProv.isAdvertising ? 'Waiting for sender...' : 'Searching for devices...',
-                        ),
-                      )
-                    else
-                      Expanded(
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            _buildActionButton(
-                              context: context,
-                              title: 'SEND',
-                              subtitle: 'Choose files to share',
-                              icon: Icons.upload_file_rounded,
-                              color: AppColors.primary,
-                              onTap: () => _handleSend(context, devProv, transProv),
+                    Expanded(
+                      child: Stack(
+                        children: [
+                          // READY STATE (Buttons)
+                          AnimatedOpacity(
+                            duration: const Duration(milliseconds: 300),
+                            opacity: isBusy ? 0 : 1,
+                            child: IgnorePointer(
+                              ignoring: isBusy,
+                              child: Column(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  _buildActionButton(
+                                    context: context,
+                                    title: 'SEND',
+                                    subtitle: 'Choose files to share',
+                                    icon: Icons.upload_file_rounded,
+                                    color: AppColors.primary,
+                                    onTap: () => _handleSend(context, devProv, transProv),
+                                  ),
+                                  const SizedBox(height: AppSpacing.l),
+                                  _buildActionButton(
+                                    context: context,
+                                    title: 'RECEIVE',
+                                    subtitle: 'Wait for incoming files',
+                                    icon: Icons.download_for_offline_rounded,
+                                    color: AppColors.success,
+                                    onTap: () => devProv.toggleAdvertising(),
+                                    isActive: devProv.isAdvertising,
+                                    activeText: 'LISTENING...',
+                                  ),
+                                ],
+                              ),
                             ),
-                            const SizedBox(height: AppSpacing.l),
-                            _buildActionButton(
-                              context: context,
-                              title: 'RECEIVE',
-                              subtitle: 'Wait for incoming files',
-                              icon: Icons.download_for_offline_rounded,
-                              color: AppColors.success,
-                              onTap: () => devProv.toggleAdvertising(),
-                              isActive: devProv.isAdvertising,
-                              activeText: 'LISTENING...',
-                            ),
-                          ],
-                        ),
-                      ),
+                          ),
 
-                    if (devProv.isDiscovering && devProv.nearbyDevices.isNotEmpty)
-                      _buildDeviceDiscovery(context, devProv, transProv),
-                    
-                    if (isBusy && devProv.nearbyDevices.isEmpty)
-                      Center(
-                        child: TextButton.icon(
-                          onPressed: () => devProv.stopAll(),
-                          icon: const Icon(Icons.close),
-                          label: const Text('Cancel'),
-                          style: TextButton.styleFrom(foregroundColor: AppColors.error),
-                        ),
+                          // BUSY STATE (Radar + Discovery)
+                          if (isBusy)
+                            Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                RadarWidget(
+                                  active: true,
+                                  label: devProv.isAdvertising ? 'Waiting for sender...' : 'Searching for devices...',
+                                ),
+                                if (devProv.isDiscovering && devProv.nearbyDevices.isNotEmpty)
+                                  _buildDeviceDiscovery(context, devProv, transProv),
+                                
+                                const SizedBox(height: AppSpacing.l),
+                                Center(
+                                  child: TextButton.icon(
+                                    onPressed: () => devProv.stopAll(),
+                                    icon: const Icon(Icons.close),
+                                    label: const Text('Cancel'),
+                                    style: TextButton.styleFrom(foregroundColor: AppColors.error),
+                                  ),
+                                ),
+                              ],
+                            ),
+                        ],
                       ),
+                    ),
                   ],
                 ),
               ),

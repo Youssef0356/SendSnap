@@ -91,39 +91,71 @@ class DeviceProvider with ChangeNotifier {
 
   Future<void> toggleAdvertising() async {
     if (_isAdvertising) {
-      await _nearbyService.stopAll();
       _isAdvertising = false;
-    } else {
-      // Ensure everything is stopped first
+      notifyListeners();
       await _nearbyService.stopAll();
+    } else {
+      // Immediate feedback
+      _isAdvertising = true;
       _isDiscovering = false;
+      notifyListeners();
 
-      if (!await _permissionService.hasStoragePermission()) {
-        if (!await _permissionService.requestAllPermissions()) return;
+      // Background work
+      try {
+        await _nearbyService.stopAll();
+        if (!await _permissionService.hasStoragePermission()) {
+          if (!await _permissionService.requestAllPermissions()) {
+            _isAdvertising = false;
+            notifyListeners();
+            return;
+          }
+        }
+        
+        bool success = await _nearbyService.startAdvertising(_displayName);
+        if (!success) {
+          _isAdvertising = false;
+          notifyListeners();
+        }
+      } catch (e) {
+        _isAdvertising = false;
+        notifyListeners();
       }
-      
-      _isAdvertising = await _nearbyService.startAdvertising(_displayName);
     }
-    notifyListeners();
   }
 
   Future<void> toggleDiscovery() async {
     if (_isDiscovering) {
-      await _nearbyService.stopAll();
       _isDiscovering = false;
-    } else {
-      // Ensure everything is stopped first
+      notifyListeners();
       await _nearbyService.stopAll();
+    } else {
+      // Immediate feedback
+      _isDiscovering = true;
       _isAdvertising = false;
       _foundDevices.clear();
+      notifyListeners();
 
-      if (!await _permissionService.hasStoragePermission()) {
-        if (!await _permissionService.requestAllPermissions()) return;
+      // Background work
+      try {
+        await _nearbyService.stopAll();
+        if (!await _permissionService.hasStoragePermission()) {
+          if (!await _permissionService.requestAllPermissions()) {
+            _isDiscovering = false;
+            notifyListeners();
+            return;
+          }
+        }
+        
+        bool success = await _nearbyService.startDiscovery(_displayName);
+        if (!success) {
+          _isDiscovering = false;
+          notifyListeners();
+        }
+      } catch (e) {
+        _isDiscovering = false;
+        notifyListeners();
       }
-      
-      _isDiscovering = await _nearbyService.startDiscovery(_displayName);
     }
-    notifyListeners();
   }
 
   Future<void> stopAll() async {
