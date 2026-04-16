@@ -1,99 +1,133 @@
-import 'dart:async';
-import 'package:flutter/foundation.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../models/device.dart';
-import '../models/transfer_file.dart';
-import '../services/transfer_service.dart';
-import 'device_provider.dart';
-import 'settings_provider.dart';
+import 'package:flutter/material.dart';
+import 'package:nearby_connections/nearby_connections.dart';
+import 'dart:io';
+import '../models/transfer.dart';
+import '../models/payload.dart';
+import '../services/nearby_service.dart';
+import '../services/file_handler.dart';
 
-// ─── Active Transfer Session ───
-final activeTransferProvider =
-    StateNotifierProvider<TransferNotifier, TransferSession?>((ref) {
-  return TransferNotifier(ref);
-});
+class TransferProvider with ChangeNotifier {
+  final List<FileTransfer> _transfers = [];
+  FileTransfer? _activeTransfer;
+  
+  // Maps to track payload relations
+  final Map<int, String> _payloadToTransferId = {}; // payloadId -> transferId
+  final Map<int, String> _payloadToTempPath = {}; // payloadId -> tempPath (for receiving)
 
-class TransferNotifier extends StateNotifier<TransferSession?> {
-  final Ref _ref;
-  Timer? _mockTimer;
+  List<FileTransfer> get transfers => _transfers;
+  FileTransfer? get activeTransfer => _activeTransfer;
 
-  TransferNotifier(this._ref) : super(null) { _setupCallbacks(); }
-
-  TransferService get _svc => _ref.read(transferServiceProvider);
-
-  void _setupCallbacks() {
-    void onUpdate(TransferSession s) { state = s; }
-    void onComplete() {}
-    void onError(String e) { if (state != null) state = state!.copyWith(status: TransferSessionStatus.error, errorMessage: e); }
-    void onIncomingReq(IncomingRequest req) { _ref.read(incomingRequestProvider.notifier).state = req; }
-
-    // Wire callbacks — will work after service is initialized
-    _svc.onTransferUpdate = onUpdate;
-    _svc.onTransferComplete = onComplete;
-    _svc.onError = onError;
-    _svc.onIncomingRequest = onIncomingReq;
+  void addTransfer(FileTransfer transfer) {
+    _transfers.insert(0, transfer);
+    if (transfer.status == TransferStatus.inProgress) {
+      _activeTransfer = transfer;
+    }
+    notifyListeners();
   }
 
-  Future<void> sendFiles({required NearbyDevice target, required List<TransferFile> files}) async {
-    final senderName = _ref.read(deviceNameProvider);
-    debugPrint('[SendSnap] TransferNotifier: sendFiles to ${target.name} (${target.ip}:${target.port})');
-    state = TransferSession(id: '${DateTime.now().millisecondsSinceEpoch}', targetDevice: target, files: files, direction: TransferDirection.sending, status: TransferSessionStatus.waitingForAccept);
+  void updateTransferProgress(int payloadId, PayloadTransferUpdate update) async {
+    final transferId = _payloadToTransferId[payloadId];
+    if (transferId == null) return;
 
-    if (target.id.startsWith('mock_')) {
-      debugPrint('[SendSnap] TransferNotifier: Starting mock transfer');
-      Future.delayed(const Duration(seconds: 1), () { if (state?.targetDevice.id == target.id) _mockTransfer(); });
-      return;
+    final index = _transfers.indexWhere((t) => t.id == transferId);
+    if (index == -1) return;
+
+    var transfer = _transfers[index];
+
+    if (update.status == PayloadStatus.IN_PROGRESS) {
+      transfer = transfer.copyWith(
+        transferredBytes: update.bytesTransferred,
+        status: TransferStatus.inProgress,
+      );
+      if (_activeTransfer?.id == transferId) _activeTransfer = transfer;
+    } 
+    else if (update.status == PayloadStatus.SUCCESS) {
+      // If receiving, move the file from temp to downloads
+      if (_payloadToTempPath.containsKey(payloadId)) {
+        final tempPath = _payloadToTempPath[payloadId]!;
+        await FileHandler.moveFileToDownloads(tempPath, transfer.fileName);
+        _payloadToTempPath.remove(payloadId);
+      }
+
+      transfer = transfer.copyWith(
+         transferredBytes: transfer.fileSize,
+         status: TransferStatus.completed,
+      );
+      if (_activeTransfer?.id == transferId) _activeTransfer = null;
+    } 
+    else if (update.status == PayloadStatus.FAILURE || update.status == PayloadStatus.CANCELED) {
+      transfer = transfer.copyWith(status: TransferStatus.failed);
+      if (_activeTransfer?.id == transferId) _activeTransfer = null;
     }
-    try {
-      await _svc.sendFiles(target: target, files: files, senderName: senderName);
-    } catch (e) {
-      debugPrint('[SendSnap] TransferNotifier: Error in sendFiles: $e');
-      if (state != null) state = state!.copyWith(status: TransferSessionStatus.error, errorMessage: e.toString());
+
+    _transfers[index] = transfer;
+    notifyListeners();
+  }
+
+  void handleIncomingMetadata(String endpointId, PayloadWrapper wrapper, NearbyService service) {
+    if (wrapper.type == 'FILE_META') {
+      // Received information about a file the sender is about to send
+      final transfer = FileTransfer(
+        id: wrapper.data['id'],
+        fileName: wrapper.data['name'],
+        fileSize: wrapper.data['size'],
+        status: TransferStatus.pending,
+      );
+      addTransfer(transfer);
+      
+      // Auto-accept the metadata by responding with an ACK if needed, 
+      // but Nearby Connections handles the actual file stream.
+      // We just need to wait for the FILE payload now.
+    } 
+    else if (wrapper.type == 'FILE_INCOMING') {
+      // This is our internal wrapper for when a FILE payload actually starts
+      final payloadId = wrapper.data['payloadId'] as int;
+      final tempPath = wrapper.data['tempPath'] as String;
+      
+      // Attempt to link this payload to the most recent PENDING transfer from this endpoint
+      try {
+        final pendingTransfer = _transfers.firstWhere((t) => t.status == TransferStatus.pending);
+        _payloadToTransferId[payloadId] = pendingTransfer.id;
+        _payloadToTempPath[payloadId] = tempPath.replaceFirst('file://', '');
+        
+        // Update status to inProgress
+        final index = _transfers.indexOf(pendingTransfer);
+        _transfers[index] = pendingTransfer.copyWith(status: TransferStatus.inProgress);
+        _activeTransfer = _transfers[index];
+        notifyListeners();
+      } catch (e) {
+        debugPrint('[TransferProvider] Could not match payload $payloadId to a pending transfer');
+      }
     }
   }
 
-  void _mockTransfer() {
-    _mockTimer?.cancel();
-    int fi = 0; double p = 0.0;
-    final total = state?.files.length ?? 1;
-    _mockTimer = Timer.periodic(const Duration(milliseconds: 100), (t) {
-      if (state == null || state!.status == TransferSessionStatus.cancelled) { t.cancel(); return; }
-      p += 0.05;
-      final files = List<TransferFile>.from(state!.files);
-      files[fi] = files[fi].copyWith(status: FileTransferStatus.transferring, progress: p.clamp(0.0, 1.0));
-      if (p >= 1.0) { files[fi] = files[fi].copyWith(status: FileTransferStatus.completed, progress: 1.0); p = 0.0; fi++; }
-      if (fi >= total) { state = state!.copyWith(status: TransferSessionStatus.completed, overallProgress: 1.0, files: files); t.cancel(); return; }
-      state = state!.copyWith(status: TransferSessionStatus.transferring, overallProgress: (fi + p) / total, files: files);
-    });
-  }
-
-  Future<void> acceptIncoming(IncomingRequest req) async {
-    debugPrint('[SendSnap] TransferNotifier: acceptIncoming from ${req.senderName}');
-    state = TransferSession(id: '${DateTime.now().millisecondsSinceEpoch}', targetDevice: NearbyDevice(id: req.senderIp, name: req.senderName, ip: req.senderIp, port: 0, status: DeviceStatus.ready), files: req.files, direction: TransferDirection.receiving, status: TransferSessionStatus.transferring);
-    if (req.senderIp == 'mock_ip') { 
-      debugPrint('[SendSnap] TransferNotifier: Starting mock incoming');
-      Future.delayed(const Duration(milliseconds: 500), () => _mockTransfer()); 
-      return; 
-    }
-    try {
-      await _svc.acceptTransfer(req);
-    } catch (e) {
-      debugPrint('[SendSnap] TransferNotifier: Error in acceptIncoming: $e');
-      if (state != null) state = state!.copyWith(status: TransferSessionStatus.error, errorMessage: e.toString());
-    }
-  }
-
-  void declineIncoming(IncomingRequest req) { _svc.declineTransfer(req); }
-  void cancelTransfer() { _svc.cancelTransfer(); if (state != null) state = state!.copyWith(status: TransferSessionStatus.cancelled); }
-  void clearTransfer() { _mockTimer?.cancel(); state = null; }
-
-  void triggerMockIncomingRequest() {
-    _ref.read(incomingRequestProvider.notifier).state = IncomingRequest(
-      senderName: 'Simulator Pro', senderIp: 'mock_ip', senderPort: 8080,
-      files: [TransferFile(name: 'mock_image.jpg', size: 2 * 1024 * 1024, path: ''), TransferFile(name: 'mock_video.mp4', size: 45 * 1024 * 1024, path: '')],
+  Future<void> sendFile(String endpointId, File file, NearbyService service) async {
+    final transferId = DateTime.now().millisecondsSinceEpoch.toString();
+    final transfer = FileTransfer(
+      id: transferId,
+      fileName: file.path.split('/').last,
+      fileSize: await file.length(),
+      status: TransferStatus.inProgress,
     );
+    addTransfer(transfer);
+
+    // 1. Send metadata first
+    await service.sendMetadata(endpointId, PayloadWrapper(
+      type: 'FILE_META',
+      data: {
+        'id': transfer.id,
+        'name': transfer.fileName,
+        'size': transfer.fileSize,
+      },
+    ));
+
+    // 2. Send actual file
+    final payloadId = await service.sendFile(endpointId, file.path);
+    _payloadToTransferId[payloadId] = transferId;
+  }
+
+  void clearHistory() {
+    _transfers.removeWhere((t) => t.status != TransferStatus.inProgress);
+    notifyListeners();
   }
 }
-
-// ─── Incoming Request ───
-final incomingRequestProvider = StateProvider<IncomingRequest?>((ref) => null);

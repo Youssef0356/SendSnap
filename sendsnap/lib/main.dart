@@ -1,31 +1,40 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:google_mobile_ads/google_mobile_ads.dart';
-import 'theme/app_theme.dart';
+import 'package:provider/provider.dart';
+import 'providers/device_provider.dart';
+import 'providers/transfer_provider.dart';
 import 'screens/splash_screen.dart';
-import 'screens/role_selection_screen.dart';
 import 'screens/home_screen.dart';
-import 'screens/file_picker_screen.dart';
 import 'screens/transfer_screen.dart';
 import 'screens/settings_screen.dart';
+import 'config/theme.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
-
-  // Initialize Google Mobile Ads
-  MobileAds.instance.initialize();
+  
+  // Lock orientation to portrait for a better UI experience
+  SystemChrome.setPreferredOrientations([
+    DeviceOrientation.portraitUp,
+    DeviceOrientation.portraitDown,
+  ]);
 
   // Set status bar style
   SystemChrome.setSystemUIOverlayStyle(
     const SystemUiOverlayStyle(
       statusBarColor: Colors.transparent,
-      statusBarIconBrightness: Brightness.light,
-      statusBarBrightness: Brightness.dark,
+      statusBarIconBrightness: Brightness.dark,
     ),
   );
 
-  runApp(const ProviderScope(child: SendSnapApp()));
+  runApp(
+    MultiProvider(
+      providers: [
+        ChangeNotifierProvider(create: (_) => DeviceProvider()),
+        ChangeNotifierProvider(create: (_) => TransferProvider()),
+      ],
+      child: const SendSnapApp(),
+    ),
+  );
 }
 
 class SendSnapApp extends StatelessWidget {
@@ -36,16 +45,35 @@ class SendSnapApp extends StatelessWidget {
     return MaterialApp(
       title: 'SendSnap',
       debugShowCheckedModeBanner: false,
-      theme: SendSnapTheme.darkTheme(),
+      theme: AppTheme.lightTheme(),
       initialRoute: '/splash',
       routes: {
         '/splash': (context) => const SplashScreen(),
-        '/role': (context) => const RoleSelectionScreen(),
         '/home': (context) => const HomeScreen(),
-        '/pick': (context) => const FilePickerScreen(),
         '/transfer': (context) => const TransferScreen(),
         '/settings': (context) => const SettingsScreen(),
       },
+      // Handle the payload callback from Nearby Service by notifying TransferProvider
+      // Note: In a production app, we'd use a higher-level state management synchronization.
+      builder: (context, child) {
+        final devProv = Provider.of<DeviceProvider>(context, listen: false);
+        final transProv = Provider.of<TransferProvider>(context, listen: false);
+        
+        // Wire up callbacks once
+        _setupSynchronization(devProv, transProv);
+        
+        return child!;
+      },
     );
+  }
+
+  void _setupSynchronization(DeviceProvider devProv, TransferProvider transProv) {
+    devProv.nearbyService.onMetadataReceived = (endpoint, wrapper) {
+      transProv.handleIncomingMetadata(endpoint, wrapper, devProv.nearbyService);
+    };
+    
+    devProv.nearbyService.onPayloadUpdate = (endpoint, payloadId, update) {
+      transProv.updateTransferProgress(payloadId, update);
+    };
   }
 }
