@@ -23,7 +23,7 @@ class _RadarWidgetState extends State<RadarWidget> with SingleTickerProviderStat
     super.initState();
     _controller = AnimationController(
       vsync: this,
-      duration: const Duration(seconds: 2),
+      duration: const Duration(seconds: 3),
     );
     if (widget.active) _controller.repeat();
   }
@@ -46,9 +46,8 @@ class _RadarWidgetState extends State<RadarWidget> with SingleTickerProviderStat
 
   @override
   Widget build(BuildContext context) {
-    return AnimatedPadding(
-      duration: const Duration(milliseconds: 500),
-      padding: EdgeInsets.symmetric(vertical: widget.active ? AppSpacing.xl : 0),
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: AppSpacing.xl),
       child: Column(
         children: [
           Stack(
@@ -59,14 +58,20 @@ class _RadarWidgetState extends State<RadarWidget> with SingleTickerProviderStat
                   return AnimatedBuilder(
                     animation: _controller,
                     builder: (context, child) {
-                      final progress = (_controller.value + (index / 3)) % 1.0;
+                      final animation = CurvedAnimation(
+                        parent: _controller,
+                        curve: Interval(index / 3, 1.0, curve: Curves.easeOut),
+                      );
+                      final progress = animation.value;
+                      if (progress == 0) return const SizedBox.shrink();
+
                       return Container(
-                        width: progress * 250,
-                        height: progress * 250,
+                        width: 80 + (progress * 180),
+                        height: 80 + (progress * 180),
                         decoration: BoxDecoration(
                           shape: BoxShape.circle,
                           border: Border.all(
-                            color: AppColors.primary.withOpacity(1.0 - progress),
+                            color: AppColors.primary.withOpacity((1.0 - progress) * 0.5),
                             width: 2,
                           ),
                         ),

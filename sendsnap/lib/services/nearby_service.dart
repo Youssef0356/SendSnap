@@ -22,49 +22,62 @@ class NearbyService {
 
   Future<bool> startAdvertising(String deviceName) async {
     try {
-      return await _nearby.startAdvertising(
+      debugPrint('[NearbyService] Starting advertising as $deviceName...');
+      bool success = await _nearby.startAdvertising(
         deviceName,
         Strategy.P2P_POINT_TO_POINT,
         onConnectionInitiated: (id, info) {
+          debugPrint('[NearbyService] Connection initiated with $id (${info.endpointName})');
           onConnectionInitiated?.call(id, info.endpointName);
         },
         onConnectionResult: (id, status) {
+          debugPrint('[NearbyService] Connection result with $id: $status');
           onConnectionResult?.call(id, status == Status.CONNECTED);
         },
         onDisconnected: (id) {
+          debugPrint('[NearbyService] Disconnected from $id');
           onDisconnected?.call(id);
         },
         serviceId: _serviceId,
       );
+      debugPrint('[NearbyService] Advertising success: $success');
+      return success;
     } catch (e) {
-      debugPrint('[NearbyService] Advertising error: $e');
+      debugPrint('[NearbyService] Advertising CRITICAL error: $e');
       return false;
     }
   }
 
   Future<bool> startDiscovery(String deviceName) async {
     try {
-      return await _nearby.startDiscovery(
+      debugPrint('[NearbyService] Starting discovery for $deviceName...');
+      bool success = await _nearby.startDiscovery(
         deviceName,
         Strategy.P2P_POINT_TO_POINT,
         onEndpointFound: (id, name, serviceId) {
+          debugPrint('[NearbyService] Device found: $name (ID: $id, Service: $serviceId)');
           if (serviceId == _serviceId) {
             onDeviceFound?.call(NearbyDevice(
               endpointId: id,
               endpointName: name,
               serviceId: serviceId,
             ));
+          } else {
+            debugPrint('[NearbyService] Skipping device with different ServiceId: $serviceId');
           }
         },
         onEndpointLost: (id) {
+          debugPrint('[NearbyService] Device lost: $id');
           if (id != null) {
             onDeviceLost?.call(id);
           }
         },
         serviceId: _serviceId,
       );
+      debugPrint('[NearbyService] Discovery success: $success');
+      return success;
     } catch (e) {
-      debugPrint('[NearbyService] Discovery error: $e');
+      debugPrint('[NearbyService] Discovery CRITICAL error: $e');
       return false;
     }
   }

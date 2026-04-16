@@ -14,8 +14,15 @@ class PermissionService {
       final androidVersion = await _getAndroidVersion();
 
       // Permissions required for discovery and networking
-      results[Permission.location] = await Permission.location.request();
-      
+      // Bluetooth Permissions (Mandatory for Android 12+ Nearby Connections)
+      if (androidVersion >= 31) {
+        results[Permission.bluetoothScan] = await Permission.bluetoothScan.request();
+        results[Permission.bluetoothConnect] = await Permission.bluetoothConnect.request();
+        results[Permission.bluetoothAdvertise] = await Permission.bluetoothAdvertise.request();
+      } else {
+        results[Permission.bluetooth] = await Permission.bluetooth.request();
+      }
+
       if (androidVersion >= 33) {
         // Android 13+ uses granular media permissions + Nearby WiFi
         results[Permission.photos] = await Permission.photos.request();
@@ -31,15 +38,6 @@ class PermissionService {
         // Android 10 and below - needs legacy storage permission
         results[Permission.storage] = await Permission.storage.request();
       }
-
-      // Bluetooth is no longer required for the mDNS + TCP method.
-      // We keep these lines commented out in case they're needed for legacy/offline mode.
-      /*
-      results[Permission.bluetooth] = await Permission.bluetooth.request();
-      results[Permission.bluetoothAdvertise] = await Permission.bluetoothAdvertise.request();
-      results[Permission.bluetoothConnect] = await Permission.bluetoothConnect.request();
-      results[Permission.bluetoothScan] = await Permission.bluetoothScan.request();
-      */
     }
 
     // Diagnostic logging
@@ -47,8 +45,19 @@ class PermissionService {
       debugPrint('[SendSnap] Permission ${entry.key}: ${entry.value}');
     }
 
-    // Return true only if the primary storage/media category is granted
-    return await hasStoragePermission();
+    // Return true only if core permissions are granted
+    bool storageOk = await hasStoragePermission();
+    bool bluetoothOk = true;
+    if (Platform.isAndroid) {
+      final v = await _getAndroidVersion();
+      if (v >= 31) {
+        bluetoothOk = await Permission.bluetoothScan.isGranted && 
+                      await Permission.bluetoothConnect.isGranted &&
+                      await Permission.bluetoothAdvertise.isGranted;
+      }
+    }
+    
+    return storageOk && bluetoothOk;
   }
 
   /// Check if we have storage read permission.

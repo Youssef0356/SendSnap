@@ -5,10 +5,11 @@ import 'dart:io';
 import 'dart:math';
 import '../models/device.dart';
 import '../services/nearby_service.dart';
-import '../services/permission_handler.dart';
+import '../services/permission_service.dart';
 
 class DeviceProvider with ChangeNotifier {
   final NearbyService _nearbyService = NearbyService();
+  final PermissionService _permissionService = PermissionService();
   
   String _displayName = 'User';
   bool _isAdvertising = false;
@@ -19,6 +20,7 @@ class DeviceProvider with ChangeNotifier {
   
   String get displayName => _displayName;
   bool get isAdvertising => _isAdvertising;
+  bool get getIsDiscovering => _isDiscovering;
   bool get isDiscovering => _isDiscovering;
   List<NearbyDevice> get nearbyDevices => _foundDevices.values.toList();
   NearbyDevice? get connectedDevice => _connectedDevice;
@@ -92,11 +94,15 @@ class DeviceProvider with ChangeNotifier {
       await _nearbyService.stopAll();
       _isAdvertising = false;
     } else {
-      if (!await PermissionHandler.checkPermissions()) {
-        if (!await PermissionHandler.requestAllPermissions()) return;
+      // Ensure everything is stopped first
+      await _nearbyService.stopAll();
+      _isDiscovering = false;
+
+      if (!await _permissionService.hasStoragePermission()) {
+        if (!await _permissionService.requestAllPermissions()) return;
       }
+      
       _isAdvertising = await _nearbyService.startAdvertising(_displayName);
-      if (_isAdvertising) _isDiscovering = false;
     }
     notifyListeners();
   }
@@ -106,12 +112,16 @@ class DeviceProvider with ChangeNotifier {
       await _nearbyService.stopAll();
       _isDiscovering = false;
     } else {
-      if (!await PermissionHandler.checkPermissions()) {
-        if (!await PermissionHandler.requestAllPermissions()) return;
-      }
+      // Ensure everything is stopped first
+      await _nearbyService.stopAll();
+      _isAdvertising = false;
       _foundDevices.clear();
+
+      if (!await _permissionService.hasStoragePermission()) {
+        if (!await _permissionService.requestAllPermissions()) return;
+      }
+      
       _isDiscovering = await _nearbyService.startDiscovery(_displayName);
-      if (_isDiscovering) _isAdvertising = false;
     }
     notifyListeners();
   }

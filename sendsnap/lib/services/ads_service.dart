@@ -9,20 +9,30 @@ class AdsService {
 
   bool _initialized = false;
 
-  // Real Ad Unit IDs (from project history)
+  // Real Ad Unit IDs (from project history) - fallback to Test IDs in debug mode
   static String get bannerAdUnitId {
+    if (kDebugMode) {
+      return Platform.isAndroid 
+          ? 'ca-app-pub-3940256099942544/6300978111' 
+          : 'ca-app-pub-3940256099942544/2934735716';
+    }
     if (Platform.isAndroid) {
       return 'ca-app-pub-6774620515484669/8936044734'; 
     } else {
-      return 'ca-app-pub-3940256099942544/2934735716'; // Test ID for iOS
+      return 'ca-app-pub-3940256099942544/2934735716';
     }
   }
 
   static String get interstitialAdUnitId {
+    if (kDebugMode) {
+      return Platform.isAndroid 
+          ? 'ca-app-pub-3940256099942544/1033173712'
+          : 'ca-app-pub-3940256099942544/4411468910';
+    }
     if (Platform.isAndroid) {
       return 'ca-app-pub-6774620515484669/1376814271';
     } else {
-      return 'ca-app-pub-3940256099942544/4411468910'; // Test ID for iOS
+      return 'ca-app-pub-3940256099942544/4411468910';
     }
   }
 
