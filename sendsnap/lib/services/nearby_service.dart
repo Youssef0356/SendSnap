@@ -5,7 +5,6 @@ import 'package:flutter/foundation.dart';
 import 'package:nearby_connections/nearby_connections.dart';
 import '../models/device.dart';
 import '../models/payload.dart';
-import '../models/transfer.dart';
 
 class NearbyService {
   static const String _serviceId = 'com.the356company.sendsnap';
@@ -52,13 +51,15 @@ class NearbyService {
           if (serviceId == _serviceId) {
             onDeviceFound?.call(NearbyDevice(
               endpointId: id,
-              endpointName: name ?? 'Unknown Device',
-              serviceId: serviceId ?? _serviceId,
+              endpointName: name,
+              serviceId: serviceId,
             ));
           }
         },
         onEndpointLost: (id) {
-          onDeviceLost?.call(id);
+          if (id != null) {
+            onDeviceLost?.call(id);
+          }
         },
         serviceId: _serviceId,
       );

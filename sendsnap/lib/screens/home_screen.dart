@@ -6,7 +6,8 @@ import '../providers/device_provider.dart';
 import '../providers/transfer_provider.dart';
 import '../config/constants.dart';
 import '../models/device.dart';
-import '../services/file_handler.dart';
+import '../widgets/radar_widget.dart';
+import '../widgets/banner_ad_widget.dart';
 
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
@@ -16,48 +17,74 @@ class HomeScreen extends StatelessWidget {
     final devProv = Provider.of<DeviceProvider>(context);
     final transProv = Provider.of<TransferProvider>(context);
 
+    bool isBusy = devProv.isAdvertising || devProv.isDiscovering;
+
     return Scaffold(
       body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(AppSpacing.l),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              _buildHeader(context, devProv),
-              const SizedBox(height: AppSpacing.xxl),
-              
-              // Actions Area (Minimalist & Fast)
-              Expanded(
+        child: Column(
+          children: [
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.all(AppSpacing.l),
                 child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    _buildActionButton(
-                      context: context,
-                      title: 'SEND',
-                      subtitle: 'Choose files to share',
-                      icon: Icons.upload_file_rounded,
-                      color: AppColors.primary,
-                      onTap: () => _handleSend(context, devProv, transProv),
-                    ),
-                    const SizedBox(height: AppSpacing.l),
-                    _buildActionButton(
-                      context: context,
-                      title: 'RECEIVE',
-                      subtitle: 'Wait for incoming files',
-                      icon: Icons.download_for_offline_rounded,
-                      color: AppColors.success,
-                      onTap: () => devProv.toggleAdvertising(),
-                      isActive: devProv.isAdvertising,
-                      activeText: 'LISTENING...',
-                    ),
+                    _buildHeader(context, devProv),
+                    const SizedBox(height: AppSpacing.xl),
+                    
+                    if (isBusy)
+                      Center(
+                        child: RadarWidget(
+                          active: true,
+                          label: devProv.isAdvertising ? 'Waiting for sender...' : 'Searching for devices...',
+                        ),
+                      )
+                    else
+                      Expanded(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            _buildActionButton(
+                              context: context,
+                              title: 'SEND',
+                              subtitle: 'Choose files to share',
+                              icon: Icons.upload_file_rounded,
+                              color: AppColors.primary,
+                              onTap: () => _handleSend(context, devProv, transProv),
+                            ),
+                            const SizedBox(height: AppSpacing.l),
+                            _buildActionButton(
+                              context: context,
+                              title: 'RECEIVE',
+                              subtitle: 'Wait for incoming files',
+                              icon: Icons.download_for_offline_rounded,
+                              color: AppColors.success,
+                              onTap: () => devProv.toggleAdvertising(),
+                              isActive: devProv.isAdvertising,
+                              activeText: 'LISTENING...',
+                            ),
+                          ],
+                        ),
+                      ),
+
+                    if (devProv.isDiscovering && devProv.nearbyDevices.isNotEmpty)
+                      _buildDeviceDiscovery(context, devProv, transProv),
+                    
+                    if (isBusy && devProv.nearbyDevices.isEmpty)
+                      Center(
+                        child: TextButton.icon(
+                          onPressed: () => devProv.stopAll(),
+                          icon: const Icon(Icons.close),
+                          label: const Text('Cancel'),
+                          style: TextButton.styleFrom(foregroundColor: AppColors.error),
+                        ),
+                      ),
                   ],
                 ),
               ),
-
-              if (devProv.isDiscovering && devProv.nearbyDevices.isNotEmpty)
-                _buildDeviceDiscovery(context, devProv, transProv),
-            ],
-          ),
+            ),
+            const BannerAdWidget(),
+          ],
         ),
       ),
       bottomNavigationBar: _buildBottomTransferStatus(context, transProv),
@@ -68,13 +95,19 @@ class HomeScreen extends StatelessWidget {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+        Row(
           children: [
-            Text('SendSnap', style: Theme.of(context).textTheme.displayLarge),
-            Text(
-              devProv.displayName,
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: AppColors.primary, fontWeight: FontWeight.bold),
+            Image.asset('assets/icon/app_icon.png', height: 40),
+            const SizedBox(width: 12),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('SendSnap', style: Theme.of(context).textTheme.titleLarge?.copyWith(fontSize: 24, fontWeight: FontWeight.bold)),
+                Text(
+                  devProv.displayName,
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: AppColors.primary, fontWeight: FontWeight.bold),
+                ),
+              ],
             ),
           ],
         ),
@@ -154,25 +187,20 @@ class HomeScreen extends StatelessWidget {
 
   Widget _buildDeviceDiscovery(BuildContext context, DeviceProvider devProv, TransferProvider transProv) {
     return Container(
-      height: 200,
+      height: 160,
       margin: const EdgeInsets.only(top: AppSpacing.l),
       padding: const EdgeInsets.all(AppSpacing.m),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(24),
+        boxShadow: [
+          BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 20, offset: const Offset(0, 5)),
+        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              const SizedBox(width: 8, height: 8, child: CircularProgressIndicator(strokeWidth: 2)),
-              const SizedBox(width: 12),
-              Text('Searching for devices...', style: Theme.of(context).textTheme.bodyMedium),
-              const Spacer(),
-              TextButton(onPressed: () => devProv.stopAll(), child: const Text('Cancel')),
-            ],
-          ),
+          Text('DISCOVERED DEVICES', style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.bold, color: AppColors.textSecondary)),
           const SizedBox(height: 12),
           Expanded(
             child: ListView.builder(
@@ -193,16 +221,17 @@ class HomeScreen extends StatelessWidget {
     return GestureDetector(
       onTap: () => _initiateTransfer(context, device, devProv, transProv),
       child: Container(
-        width: 120,
+        width: 100,
         margin: const EdgeInsets.only(right: 12),
         decoration: BoxDecoration(
           color: AppColors.background,
-          borderRadius: BorderRadius.circular(20),
+          borderRadius: BorderRadius.circular(24),
         ),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             const CircleAvatar(
+              radius: 24,
               backgroundColor: AppColors.primary,
               child: Icon(Icons.person, color: Colors.white),
             ),
@@ -259,13 +288,10 @@ class HomeScreen extends StatelessWidget {
     FilePickerResult? result = await FilePicker.platform.pickFiles(allowMultiple: false);
     if (result != null) {
       File file = File(result.files.single.path!);
-      
-      // Start discovery to find a device to send to
-      await devProv.toggleDiscovery();
-      
-      // We'll store the picked file temporarily or just pass it once a device is selected
-      // For speed, let's assume the next device tap will use this file
       _selectedFile = file;
+      
+      // Auto-start discovery
+      await devProv.toggleDiscovery();
     }
   }
 
@@ -277,7 +303,6 @@ class HomeScreen extends StatelessWidget {
     // Request connection
     bool connected = await devProv.nearbyService.requestConnection(devProv.displayName, target.endpointId);
     if (connected) {
-       // TransferProvider handles sending metadata then file
        await transProv.sendFile(target.endpointId, _selectedFile!, devProv.nearbyService);
        Navigator.pushNamed(context, '/transfer');
        _selectedFile = null;
