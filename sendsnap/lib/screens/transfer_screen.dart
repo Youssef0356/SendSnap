@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../theme/app_theme.dart';
 import '../models/transfer_file.dart';
 import '../providers/transfer_provider.dart';
+import '../providers/device_provider.dart';
 import '../widgets/file_tile.dart';
 import '../widgets/progress_bar.dart';
 import '../services/ads_service.dart';

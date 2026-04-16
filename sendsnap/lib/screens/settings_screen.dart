@@ -5,11 +5,9 @@ import 'package:url_launcher/url_launcher.dart';
 import '../theme/app_theme.dart';
 import '../providers/device_provider.dart';
 import '../providers/settings_provider.dart';
-import '../providers/connection_provider.dart';
 import '../providers/transfer_provider.dart';
 
 /// S6 — Settings Screen
-/// Device name, save location, and about section.
 class SettingsScreen extends ConsumerWidget {
   const SettingsScreen({super.key});
 
@@ -40,7 +38,6 @@ class SettingsScreen extends ConsumerWidget {
       body: ListView(
         padding: const EdgeInsets.symmetric(vertical: 8),
         children: [
-          // YOUR DEVICE section
           _SectionHeader(label: 'YOUR DEVICE'),
           _SettingsTile(
             icon: Icons.smartphone_rounded,
@@ -54,7 +51,6 @@ class SettingsScreen extends ConsumerWidget {
 
           const SizedBox(height: 24),
 
-          // SAVE LOCATION section
           _SectionHeader(label: 'SAVE LOCATION'),
           _SettingsTile(
             icon: Icons.folder_rounded,
@@ -65,7 +61,6 @@ class SettingsScreen extends ConsumerWidget {
 
           const SizedBox(height: 24),
 
-          // ABOUT section
           _SectionHeader(label: 'ABOUT'),
           _SettingsTile(
             icon: Icons.info_outline_rounded,
@@ -84,10 +79,10 @@ class SettingsScreen extends ConsumerWidget {
             iconColor: SendSnapTheme.warning,
             title: 'Rate SendSnap ⭐',
             onTap: () => _launchUrl(
-                'https://play.google.com/store/apps/details?id=com.the356company.sendsnap'),
+              'https://play.google.com/store/apps/details?id=com.the356company.sendsnap',
+            ),
           ),
 
-          // DEVELOPER TOOLS (only in debug/profile)
           if (!kReleaseMode) ...[
             const SizedBox(height: 24),
             _SectionHeader(label: 'DEVELOPER TOOLS'),
@@ -113,7 +108,7 @@ class SettingsScreen extends ConsumerWidget {
                   ref
                       .read(activeTransferProvider.notifier)
                       .triggerMockIncomingRequest();
-                  Navigator.pop(context); // Go back home
+                  Navigator.pop(context);
                 },
               ),
           ],
@@ -127,7 +122,12 @@ class SettingsScreen extends ConsumerWidget {
     WidgetRef ref,
     String currentName,
   ) {
-    final controller = TextEditingController(text: currentName);
+    // Strip the trailing (xxxx) suffix for display in the text field
+    final displayName = currentName.replaceAll(
+      RegExp(r'\s*\([a-z0-9]{4}\)$'),
+      '',
+    );
+    final controller = TextEditingController(text: displayName);
 
     showDialog(
       context: context,
@@ -153,8 +153,10 @@ class SettingsScreen extends ConsumerWidget {
               borderRadius: BorderRadius.circular(12),
               borderSide: BorderSide.none,
             ),
-            contentPadding:
-                const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            contentPadding: const EdgeInsets.symmetric(
+              horizontal: 16,
+              vertical: 14,
+            ),
           ),
         ),
         actions: [
@@ -172,8 +174,6 @@ class SettingsScreen extends ConsumerWidget {
               final newName = controller.text.trim();
               if (newName.isNotEmpty) {
                 ref.read(deviceNameProvider.notifier).updateName(newName);
-
-                // Restart broadcast with new name
                 _restartBroadcast(ref, newName);
               }
               Navigator.pop(ctx);
@@ -190,17 +190,15 @@ class SettingsScreen extends ConsumerWidget {
 
   void _restartBroadcast(WidgetRef ref, String newName) async {
     try {
-      final mode = ref.read(connectionModeProvider);
+      final discovery = ref.read(discoveryServiceProvider);
+      final transfer = ref.read(transferServiceProvider);
       
-      if (mode == ConnectionMode.wifi) {
-        final discovery = ref.read(discoveryServiceProvider);
-        final port = discovery.broadcastPort;
+      if (discovery.isBroadcasting) {
         await discovery.stopBroadcast();
-        await discovery.startBroadcast(newName, port);
-      } else {
-        final offline = ref.read(offlineConnectionServiceProvider);
-        await offline.stopBroadcast();
-        await offline.startBroadcast(newName);
+        final port = transfer.serverPort;
+        if (port > 0) {
+          await discovery.startBroadcast(newName, port);
+        }
       }
     } catch (e) {
       debugPrint('[SendSnap] Failed to restart broadcast: $e');
@@ -216,7 +214,6 @@ class SettingsScreen extends ConsumerWidget {
 
 class _SectionHeader extends StatelessWidget {
   final String label;
-
   const _SectionHeader({required this.label});
 
   @override
@@ -304,8 +301,10 @@ class _SettingsTile extends StatelessWidget {
                 ],
               ),
             ),
-            ?trailing,
-            if (onTap != null && trailing == null)
+            // FIX: replaced invalid `?trailing` null-aware spread with proper conditional
+            if (trailing != null)
+              trailing!
+            else if (onTap != null)
               Icon(
                 Icons.chevron_right_rounded,
                 color: SendSnapTheme.accent.withValues(alpha: 0.3),
@@ -320,7 +319,6 @@ class _SettingsTile extends StatelessWidget {
 
 class _EditButton extends StatelessWidget {
   final VoidCallback onTap;
-
   const _EditButton({required this.onTap});
 
   @override

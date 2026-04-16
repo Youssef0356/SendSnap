@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../theme/app_theme.dart';
 import '../models/transfer_file.dart';
 import '../providers/transfer_provider.dart';
+import '../providers/device_provider.dart';
 import '../widgets/file_tile.dart';
 
 /// S3 — Incoming Request Screen
@@ -69,12 +70,8 @@ class _IncomingRequestSheetState extends State<IncomingRequestSheet> {
 
   void _decline() {
     _timer?.cancel();
-    final service = widget.ref.read(transferServiceProvider);
-    service.declineTransfer(widget.request);
-
-    // Clear the incoming request
+    widget.ref.read(transferServiceProvider).declineTransfer(widget.request);
     widget.ref.read(incomingRequestProvider.notifier).state = null;
-
     if (mounted) Navigator.of(context).pop();
   }
 

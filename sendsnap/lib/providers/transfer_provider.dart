@@ -1,17 +1,11 @@
 import 'dart:async';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/device.dart';
 import '../models/transfer_file.dart';
 import '../services/transfer_service.dart';
 import 'device_provider.dart';
-import 'connection_provider.dart';
-
-// ─── Transfer Service Singleton ───
-final transferServiceProvider = Provider<TransferService>((ref) {
-  final service = TransferService();
-  ref.onDispose(() => service.dispose());
-  return service;
-});
+import 'settings_provider.dart';
 
 // ─── Active Transfer Session ───
 final activeTransferProvider =
@@ -21,206 +15,85 @@ final activeTransferProvider =
 
 class TransferNotifier extends StateNotifier<TransferSession?> {
   final Ref _ref;
-
-  TransferNotifier(this._ref) : super(null) {
-    _setupCallbacks();
-  }
-
   Timer? _mockTimer;
 
-  dynamic get _activeService {
-    if (_ref.read(connectionModeProvider) == ConnectionMode.offline) {
-      return _ref.read(offlineConnectionServiceProvider);
-    }
-    return _ref.read(transferServiceProvider);
-  }
+  TransferNotifier(this._ref) : super(null) { _setupCallbacks(); }
+
+  TransferService get _svc => _ref.read(transferServiceProvider);
 
   void _setupCallbacks() {
-    final wifiService = _ref.read(transferServiceProvider);
-    final offlineService = _ref.read(offlineConnectionServiceProvider);
-
-    void onUpdate(TransferSession session) {
-      state = session;
-    }
-
+    void onUpdate(TransferSession s) { state = s; }
     void onComplete() {}
+    void onError(String e) { if (state != null) state = state!.copyWith(status: TransferSessionStatus.error, errorMessage: e); }
+    void onIncomingReq(IncomingRequest req) { _ref.read(incomingRequestProvider.notifier).state = req; }
 
-    void onError(String error) {
-      if (state != null) {
-        state = state!.copyWith(
-          status: TransferSessionStatus.error,
-          errorMessage: error,
-        );
-      }
-    }
-
-    void onIncomingReq(IncomingRequest req) {
-      _ref.read(incomingRequestProvider.notifier).state = req;
-    }
-
-    wifiService.onTransferUpdate = onUpdate;
-    wifiService.onTransferComplete = onComplete;
-    wifiService.onError = onError;
-    wifiService.onIncomingRequest = onIncomingReq;
-
-    offlineService.onTransferUpdate = onUpdate;
-    offlineService.onTransferComplete = onComplete;
-    offlineService.onError = onError;
-    offlineService.onIncomingRequest = onIncomingReq;
+    // Wire callbacks — will work after service is initialized
+    _svc.onTransferUpdate = onUpdate;
+    _svc.onTransferComplete = onComplete;
+    _svc.onError = onError;
+    _svc.onIncomingRequest = onIncomingReq;
   }
 
-  /// Start sending files to a device.
-  Future<void> sendFiles({
-    required NearbyDevice target,
-    required List<TransferFile> files,
-  }) async {
+  Future<void> sendFiles({required NearbyDevice target, required List<TransferFile> files}) async {
     final senderName = _ref.read(deviceNameProvider);
-
-    state = TransferSession(
-      id: DateTime.now().millisecondsSinceEpoch.toString(),
-      targetDevice: target,
-      files: files,
-      direction: TransferDirection.sending,
-      status: TransferSessionStatus.waitingForAccept,
-    );
+    debugPrint('[SendSnap] TransferNotifier: sendFiles to ${target.name} (${target.ip}:${target.port})');
+    state = TransferSession(id: '${DateTime.now().millisecondsSinceEpoch}', targetDevice: target, files: files, direction: TransferDirection.sending, status: TransferSessionStatus.waitingForAccept);
 
     if (target.id.startsWith('mock_')) {
-      // Simulate target accepting after 1 second
-      Future.delayed(const Duration(seconds: 1), () {
-        if (state?.targetDevice.id == target.id) {
-          _startMockTransfer();
-        }
-      });
+      debugPrint('[SendSnap] TransferNotifier: Starting mock transfer');
+      Future.delayed(const Duration(seconds: 1), () { if (state?.targetDevice.id == target.id) _mockTransfer(); });
       return;
     }
-
-    await _activeService.sendFiles(
-      target: target,
-      files: files,
-      senderName: senderName,
-    );
+    try {
+      await _svc.sendFiles(target: target, files: files, senderName: senderName);
+    } catch (e) {
+      debugPrint('[SendSnap] TransferNotifier: Error in sendFiles: $e');
+      if (state != null) state = state!.copyWith(status: TransferSessionStatus.error, errorMessage: e.toString());
+    }
   }
 
-  /// Start a mock transfer simulation
-  void _startMockTransfer() {
+  void _mockTransfer() {
     _mockTimer?.cancel();
-    int totalFiles = state?.files.length ?? 0;
-    int currentFileIndex = 0;
-      double progress = 0.0;
-
-    _mockTimer = Timer.periodic(const Duration(milliseconds: 100), (timer) {
-      if (state == null || state!.status == TransferSessionStatus.cancelled) {
-        timer.cancel();
-        return;
-      }
-
-      progress += 0.05; // Increment progress
-      
-      double overallProgress = (currentFileIndex + progress) / totalFiles;
-
-      // Update the files list with individual progress
-      final updatedFiles = List<TransferFile>.from(state!.files);
-      updatedFiles[currentFileIndex] = updatedFiles[currentFileIndex].copyWith(
-        status: FileTransferStatus.transferring,
-        progress: progress.clamp(0.0, 1.0),
-      );
-
-      if (progress >= 1.0) {
-        // Mark current file as completed
-        updatedFiles[currentFileIndex] = updatedFiles[currentFileIndex].copyWith(
-          status: FileTransferStatus.completed,
-          progress: 1.0,
-        );
-        
-        progress = 0.0;
-        currentFileIndex++;
-        
-        if (currentFileIndex >= totalFiles) {
-          state = state!.copyWith(
-            status: TransferSessionStatus.completed,
-            overallProgress: 1.0,
-            files: updatedFiles,
-          );
-          timer.cancel();
-          return;
-        }
-      }
-
-      state = state!.copyWith(
-        status: TransferSessionStatus.transferring,
-        overallProgress: overallProgress,
-        files: updatedFiles,
-      );
+    int fi = 0; double p = 0.0;
+    final total = state?.files.length ?? 1;
+    _mockTimer = Timer.periodic(const Duration(milliseconds: 100), (t) {
+      if (state == null || state!.status == TransferSessionStatus.cancelled) { t.cancel(); return; }
+      p += 0.05;
+      final files = List<TransferFile>.from(state!.files);
+      files[fi] = files[fi].copyWith(status: FileTransferStatus.transferring, progress: p.clamp(0.0, 1.0));
+      if (p >= 1.0) { files[fi] = files[fi].copyWith(status: FileTransferStatus.completed, progress: 1.0); p = 0.0; fi++; }
+      if (fi >= total) { state = state!.copyWith(status: TransferSessionStatus.completed, overallProgress: 1.0, files: files); t.cancel(); return; }
+      state = state!.copyWith(status: TransferSessionStatus.transferring, overallProgress: (fi + p) / total, files: files);
     });
   }
 
-  /// Accept an incoming transfer.
-  Future<void> acceptIncoming(IncomingRequest request) async {
-    state = TransferSession(
-      id: DateTime.now().millisecondsSinceEpoch.toString(),
-      targetDevice: NearbyDevice(
-        id: request.senderIp,
-        name: request.senderName,
-        ip: request.senderIp,
-        port: request.senderPort,
-      ),
-      files: request.files,
-      direction: TransferDirection.receiving,
-      status: TransferSessionStatus.waitingForAccept,
-    );
-
-    if (request.senderIp == 'mock_ip') {
-      Future.delayed(const Duration(milliseconds: 500), () {
-        _startMockTransfer();
-      });
-      return;
+  Future<void> acceptIncoming(IncomingRequest req) async {
+    debugPrint('[SendSnap] TransferNotifier: acceptIncoming from ${req.senderName}');
+    state = TransferSession(id: '${DateTime.now().millisecondsSinceEpoch}', targetDevice: NearbyDevice(id: req.senderIp, name: req.senderName, ip: req.senderIp, port: 0, status: DeviceStatus.ready), files: req.files, direction: TransferDirection.receiving, status: TransferSessionStatus.transferring);
+    if (req.senderIp == 'mock_ip') { 
+      debugPrint('[SendSnap] TransferNotifier: Starting mock incoming');
+      Future.delayed(const Duration(milliseconds: 500), () => _mockTransfer()); 
+      return; 
     }
-
-    await _activeService.acceptTransfer(request);
-  }
-  
-  /// Decline an incoming transfer.
-  void declineIncoming(IncomingRequest request) {
-    _activeService.declineTransfer(request);
-  }
-
-  /// Cancel the active transfer.
-  void cancelTransfer() {
-    _activeService.cancelTransfer();
-    if (state != null) {
-      state = state!.copyWith(status: TransferSessionStatus.cancelled);
+    try {
+      await _svc.acceptTransfer(req);
+    } catch (e) {
+      debugPrint('[SendSnap] TransferNotifier: Error in acceptIncoming: $e');
+      if (state != null) state = state!.copyWith(status: TransferSessionStatus.error, errorMessage: e.toString());
     }
   }
 
-  /// Clear the transfer state.
-  void clearTransfer() {
-    _mockTimer?.cancel();
-    state = null;
-  }
+  void declineIncoming(IncomingRequest req) { _svc.declineTransfer(req); }
+  void cancelTransfer() { _svc.cancelTransfer(); if (state != null) state = state!.copyWith(status: TransferSessionStatus.cancelled); }
+  void clearTransfer() { _mockTimer?.cancel(); state = null; }
 
-  /// Trigger a mock incoming request for testing
   void triggerMockIncomingRequest() {
-    final mockRequest = IncomingRequest(
-      senderName: 'Simulator Pro',
-      senderIp: 'mock_ip',
-      senderPort: 8080,
-      files: [
-        TransferFile(
-          name: 'mock_image_1.jpg',
-          size: 1024 * 1024 * 2, // 2MB
-          path: '',
-        ),
-        TransferFile(
-          name: 'mock_video_presentation.mp4',
-          size: 1024 * 1024 * 45, // 45MB
-          path: '',
-        ),
-      ],
+    _ref.read(incomingRequestProvider.notifier).state = IncomingRequest(
+      senderName: 'Simulator Pro', senderIp: 'mock_ip', senderPort: 8080,
+      files: [TransferFile(name: 'mock_image.jpg', size: 2 * 1024 * 1024, path: ''), TransferFile(name: 'mock_video.mp4', size: 45 * 1024 * 1024, path: '')],
     );
-    _ref.read(incomingRequestProvider.notifier).state = mockRequest;
   }
 }
 
 // ─── Incoming Request ───
-final incomingRequestProvider =
-    StateProvider<IncomingRequest?>((ref) => null);
+final incomingRequestProvider = StateProvider<IncomingRequest?>((ref) => null);

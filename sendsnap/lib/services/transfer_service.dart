@@ -11,23 +11,17 @@ import '../models/transfer_file.dart';
 class _IncomingSocketContext {
   final Socket socket;
   final StreamQueue<Uint8List> queue;
-
-  // Bytes already read from the stream but not yet consumed by higher-level parsing.
   Uint8List pending = Uint8List(0);
 
   _IncomingSocketContext(this.socket) : queue = StreamQueue<Uint8List>(socket);
 }
 
-/// Handles peer-to-peer file transfer over TCP sockets.
-/// Sender connects to receiver's server, sends metadata, waits for accept,
-/// then streams file bytes. Receiver listens for incoming connections.
 class TransferService {
   ServerSocket? _serverSocket;
   Socket? _activeSocket;
   bool _isListening = false;
   int _serverPort = 0;
 
-  // Callbacks
   Function(IncomingRequest)? onIncomingRequest;
   Function(TransferSession)? onTransferUpdate;
   Function(String)? onError;
@@ -38,15 +32,11 @@ class TransferService {
 
   // ─── RECEIVER SIDE ───
 
-  /// Start TCP server to listen for incoming file transfers.
   Future<int> startServer() async {
     if (_isListening) return _serverPort;
 
     try {
-      _serverSocket = await ServerSocket.bind(
-        InternetAddress.anyIPv4,
-        0, // OS assigns a free port
-      );
+      _serverSocket = await ServerSocket.bind(InternetAddress.anyIPv4, 0);
       _serverPort = _serverSocket!.port;
       _isListening = true;
       debugPrint('[SendSnap] TCP server listening on port $_serverPort');
@@ -67,20 +57,24 @@ class TransferService {
   }
 
   void _handleIncomingConnection(Socket socket) async {
-    debugPrint('[SendSnap] Incoming connection from ${socket.remoteAddress.address}:${socket.remotePort}');
+    debugPrint(
+      '[SendSnap] Incoming connection from ${socket.remoteAddress.address}:${socket.remotePort}',
+    );
 
     try {
       final ctx = _IncomingSocketContext(socket);
 
-      // Wait for the header with timeout
+      debugPrint('[SendSnap] Reading header from ${socket.remoteAddress.address}...');
       final headerJson = await _readHeader(ctx).timeout(
-        const Duration(seconds: 10),
+        const Duration(seconds: 15),
         onTimeout: () {
+          debugPrint('[SendSnap] Timeout reading header from ${socket.remoteAddress.address}');
           socket.destroy();
           throw TimeoutException('Header timeout');
         },
       );
 
+      debugPrint('[SendSnap] Received header: $headerJson');
       final metadata = jsonDecode(headerJson) as Map<String, dynamic>;
       final senderName = metadata['sender'] as String;
       final filesJson = metadata['files'] as List;
@@ -88,6 +82,7 @@ class TransferService {
           .map((f) => TransferFile.fromJson(f as Map<String, dynamic>))
           .toList();
 
+      debugPrint('[SendSnap] Incoming request from $senderName with ${files.length} files');
       final request = IncomingRequest(
         senderName: senderName,
         senderIp: socket.remoteAddress.address,
@@ -98,48 +93,53 @@ class TransferService {
 
       onIncomingRequest?.call(request);
     } catch (e) {
-      debugPrint('[SendSnap] Error handling connection: $e');
+      debugPrint('[SendSnap] Error handling connection from ${socket.remoteAddress.address}: $e');
       socket.destroy();
     }
   }
 
-  /// Accept an incoming file transfer request.
   Future<void> acceptTransfer(IncomingRequest request) async {
     final ctx = request.socket is _IncomingSocketContext
         ? request.socket as _IncomingSocketContext
         : _IncomingSocketContext(request.socket as Socket);
 
     try {
-      // Send acceptance signal
       ctx.socket.write('ACCEPT\n');
       await ctx.socket.flush();
       debugPrint('[SendSnap] Accepted transfer from ${request.senderName}');
 
-      // Prepare save directory
       final saveDir = await _getSaveDirectory();
-
-      // Receive files one by one
       final files = List<TransferFile>.from(request.files);
       int totalReceived = 0;
       final totalSize = request.totalSize;
+
+      // Guard against divide-by-zero on empty transfers
+      if (totalSize == 0) {
+        ctx.socket.write('TRANSFER_OK\n');
+        await ctx.socket.flush();
+        ctx.socket.destroy();
+        return;
+      }
 
       for (int i = 0; i < files.length; i++) {
         final file = files[i];
         files[i] = file.copyWith(status: FileTransferStatus.transferring);
 
-        _emitUpdate(TransferSession(
-          id: DateTime.now().millisecondsSinceEpoch.toString(),
-          targetDevice: NearbyDevice(
-            id: request.senderIp,
-            name: request.senderName,
-            ip: request.senderIp,
-            port: request.senderPort,
+        _emitUpdate(
+          TransferSession(
+            id: DateTime.now().millisecondsSinceEpoch.toString(),
+            targetDevice: NearbyDevice(
+              id: request.senderIp,
+              name: request.senderName,
+              ip: request.senderIp,
+              port: request.senderPort,
+            ),
+            files: List.from(files),
+            direction: TransferDirection.receiving,
+            overallProgress: totalReceived / totalSize,
+            status: TransferSessionStatus.transferring,
           ),
-          files: List.from(files),
-          direction: TransferDirection.receiving,
-          overallProgress: totalReceived / totalSize,
-          status: TransferSessionStatus.transferring,
-        ));
+        );
 
         final savePath = '${saveDir.path}/${file.name}';
         final outputFile = File(savePath);
@@ -147,7 +147,7 @@ class TransferService {
         try {
           sink = outputFile.openWrite();
         } catch (e) {
-          debugPrint('[SendSnap] Permission denied or write error: $e');
+          debugPrint('[SendSnap] Write error: $e');
           ctx.socket.write('WRITE_ERROR:${file.name}\n');
           await ctx.socket.flush();
           throw Exception('Permission denied to write ${file.name}');
@@ -158,8 +158,6 @@ class TransferService {
         int lastSpeedBytes = 0;
         double currentSpeed = 0;
 
-        // Read exactly `file.size` bytes. This avoids corrupting binary files and
-        // works correctly regardless of TCP packet boundaries.
         int remaining = file.size;
         while (remaining > 0) {
           final Uint8List chunk = await _nextBytes(ctx);
@@ -178,12 +176,10 @@ class TransferService {
             remaining = 0;
           }
 
-          // Calculate speed every 500ms
           final now = DateTime.now();
-          if (now.difference(lastSpeedUpdate).inMilliseconds >= 500) {
-            currentSpeed = (fileReceived - lastSpeedBytes) /
-                now.difference(lastSpeedUpdate).inMilliseconds *
-                1000;
+          final elapsed = now.difference(lastSpeedUpdate).inMilliseconds;
+          if (elapsed >= 500) {
+            currentSpeed = (fileReceived - lastSpeedBytes) / elapsed * 1000.0;
             lastSpeedBytes = fileReceived;
             lastSpeedUpdate = now;
           }
@@ -198,24 +194,30 @@ class TransferService {
               ? Duration(seconds: (remainingBytes / currentSpeed).round())
               : null;
 
-          _emitUpdate(TransferSession(
-            id: DateTime.now().millisecondsSinceEpoch.toString(),
-            targetDevice: NearbyDevice(
-              id: request.senderIp,
-              name: request.senderName,
-              ip: request.senderIp,
-              port: request.senderPort,
-            ),
-            files: List.from(files),
-            direction: TransferDirection.receiving,
-            overallProgress: totalReceived / totalSize,
-            speed: currentSpeed,
-            timeRemaining: eta,
-            status: TransferSessionStatus.transferring,
-          ));
+          // Throttle updates to ~10 per second to avoid UI lag
+          if (now.difference(lastSpeedUpdate).inMilliseconds >= 100 || remaining == 0) {
+            _emitUpdate(
+              TransferSession(
+                id: DateTime.now().millisecondsSinceEpoch.toString(),
+                targetDevice: NearbyDevice(
+                  id: request.senderIp,
+                  name: request.senderName,
+                  ip: request.senderIp,
+                  port: request.senderPort,
+                ),
+                files: List.from(files),
+                direction: TransferDirection.receiving,
+                overallProgress: totalReceived / totalSize,
+                speed: currentSpeed,
+                timeRemaining: eta,
+                status: TransferSessionStatus.transferring,
+              ),
+            );
+          }
         }
 
         try {
+          await sink.flush();
           await sink.close();
         } catch (e) {
           ctx.socket.write('WRITE_ERROR:${file.name}\n');
@@ -230,26 +232,30 @@ class TransferService {
         );
       }
 
-      // All done - Send final OK signal
+      // FIX: send final OK signal only after all files are fully written
       ctx.socket.write('TRANSFER_OK\n');
       await ctx.socket.flush();
 
-      _emitUpdate(TransferSession(
-        id: DateTime.now().millisecondsSinceEpoch.toString(),
-        targetDevice: NearbyDevice(
-          id: request.senderIp,
-          name: request.senderName,
-          ip: request.senderIp,
-          port: request.senderPort,
+      _emitUpdate(
+        TransferSession(
+          id: DateTime.now().millisecondsSinceEpoch.toString(),
+          targetDevice: NearbyDevice(
+            id: request.senderIp,
+            name: request.senderName,
+            ip: request.senderIp,
+            port: request.senderPort,
+          ),
+          files: List.from(files),
+          direction: TransferDirection.receiving,
+          overallProgress: 1.0,
+          status: TransferSessionStatus.completed,
         ),
-        files: List.from(files),
-        direction: TransferDirection.receiving,
-        overallProgress: 1.0,
-        status: TransferSessionStatus.completed,
-      ));
+      );
 
       onTransferComplete?.call();
-      await ctx.queue.cancel();
+      try {
+        await ctx.queue.cancel();
+      } catch (_) {}
       ctx.socket.destroy();
     } catch (e) {
       debugPrint('[SendSnap] Transfer receive error: $e');
@@ -261,10 +267,10 @@ class TransferService {
     }
   }
 
-  /// Decline an incoming file transfer request.
   void declineTransfer(IncomingRequest request) {
-    final ctx =
-        request.socket is _IncomingSocketContext ? request.socket as _IncomingSocketContext : null;
+    final ctx = request.socket is _IncomingSocketContext
+        ? request.socket as _IncomingSocketContext
+        : null;
     final socket = ctx?.socket ?? request.socket as Socket;
     try {
       socket.write('REJECT\n');
@@ -272,7 +278,6 @@ class TransferService {
         ctx?.queue.cancel()?.catchError((_) {});
         socket.destroy();
       });
-      debugPrint('[SendSnap] Declined transfer from ${request.senderName}');
     } catch (e) {
       socket.destroy();
     }
@@ -280,65 +285,82 @@ class TransferService {
 
   // ─── SENDER SIDE ───
 
-  /// Send files to a target device.
   Future<void> sendFiles({
     required NearbyDevice target,
     required List<TransferFile> files,
     required String senderName,
   }) async {
     try {
+      debugPrint('[SendSnap] Starting sendFiles to ${target.name} (${target.ip}:${target.port})');
       final sourceAddr = await _getBestSourceAddress(target.ip);
-      debugPrint('[SendSnap] Connecting from ${sourceAddr?.address ?? "any"} to ${target.ip}:${target.port}');
-      
+      debugPrint(
+        '[SendSnap] Connecting from ${sourceAddr?.address ?? "any"} to ${target.ip}:${target.port}',
+      );
+
       _activeSocket = await Socket.connect(
         target.ip,
         target.port,
         sourceAddress: sourceAddr,
-        timeout: const Duration(seconds: 10),
+        timeout: const Duration(seconds: 15),
       );
+      debugPrint('[SendSnap] Connected to ${target.ip}:${target.port}');
 
-      // Send metadata header
       final metadata = {
         'sender': senderName,
         'files': files.map((f) => f.toJson()).toList(),
       };
+      debugPrint('[SendSnap] Sending header: ${jsonEncode(metadata)}');
       _activeSocket!.write('${jsonEncode(metadata)}\n---END_HEADER---\n');
       await _activeSocket!.flush();
 
-      // Emit waiting state
-      _emitUpdate(TransferSession(
-        id: DateTime.now().millisecondsSinceEpoch.toString(),
-        targetDevice: target,
-        files: files,
-        direction: TransferDirection.sending,
-        status: TransferSessionStatus.waitingForAccept,
-      ));
+      _emitUpdate(
+        TransferSession(
+          id: DateTime.now().millisecondsSinceEpoch.toString(),
+          targetDevice: target,
+          files: files,
+          direction: TransferDirection.sending,
+          status: TransferSessionStatus.waitingForAccept,
+        ),
+      );
 
-      // Wait for accept/reject
+      debugPrint('[SendSnap] Header sent, waiting for response...');
+      // Wait for ACCEPT / REJECT
       final responseCompleter = Completer<String>();
       final responseBuf = StringBuffer();
-
       late StreamSubscription responseSub;
       responseSub = _activeSocket!.listen(
         (data) {
-          responseBuf.write(utf8.decode(data));
-          final content = responseBuf.toString();
-          if (content.contains('\n')) {
+          final text = utf8.decode(data);
+          debugPrint('[SendSnap] Received raw data from receiver: $text');
+          responseBuf.write(text);
+          if (responseBuf.toString().contains('\n')) {
             responseSub.cancel();
-            responseCompleter.complete(content.trim());
+            if (!responseCompleter.isCompleted) {
+              final resp = responseBuf.toString().trim();
+              debugPrint('[SendSnap] Parsed response: $resp');
+              responseCompleter.complete(resp);
+            }
           }
         },
         onError: (e) {
+          debugPrint('[SendSnap] Socket error while waiting for response: $e');
           if (!responseCompleter.isCompleted) {
             responseCompleter.completeError(e);
+          }
+        },
+        onDone: () {
+          debugPrint('[SendSnap] Socket closed while waiting for response');
+          if (!responseCompleter.isCompleted) {
+            responseCompleter.completeError('Socket closed');
           }
         },
         cancelOnError: true,
       );
 
       final response = await responseCompleter.future.timeout(
-        const Duration(seconds: 35),
+        const Duration(seconds: 45),
         onTimeout: () {
+          debugPrint('[SendSnap] Timeout waiting for response from receiver');
           _activeSocket?.destroy();
           throw TimeoutException('No response from receiver');
         },
@@ -346,21 +368,22 @@ class TransferService {
 
       if (response != 'ACCEPT') {
         debugPrint('[SendSnap] Transfer rejected by ${target.name}');
-        _emitUpdate(TransferSession(
-          id: DateTime.now().millisecondsSinceEpoch.toString(),
-          targetDevice: target,
-          files: files,
-          direction: TransferDirection.sending,
-          status: TransferSessionStatus.cancelled,
-          errorMessage: 'Request declined by ${target.name}',
-        ));
+        _emitUpdate(
+          TransferSession(
+            id: DateTime.now().millisecondsSinceEpoch.toString(),
+            targetDevice: target,
+            files: files,
+            direction: TransferDirection.sending,
+            status: TransferSessionStatus.cancelled,
+            errorMessage: 'Request declined by ${target.name}',
+          ),
+        );
         _activeSocket?.destroy();
         return;
       }
 
       debugPrint('[SendSnap] Transfer accepted, starting send');
 
-      // Send files one by one
       final mutableFiles = List<TransferFile>.from(files);
       int totalSent = 0;
       final totalSize = files.fold<int>(0, (sum, f) => sum + f.size);
@@ -370,7 +393,9 @@ class TransferService {
 
       for (int i = 0; i < mutableFiles.length; i++) {
         final file = mutableFiles[i];
-        mutableFiles[i] = file.copyWith(status: FileTransferStatus.transferring);
+        mutableFiles[i] = file.copyWith(
+          status: FileTransferStatus.transferring,
+        );
 
         final inputFile = File(file.path);
         if (!await inputFile.exists()) {
@@ -385,12 +410,10 @@ class TransferService {
           fileSent += chunk.length;
           totalSent += chunk.length;
 
-          // Calculate speed
           final now = DateTime.now();
-          if (now.difference(lastSpeedUpdate).inMilliseconds >= 500) {
-            currentSpeed = (totalSent - lastSpeedBytes) /
-                now.difference(lastSpeedUpdate).inMilliseconds *
-                1000;
+          final elapsed = now.difference(lastSpeedUpdate).inMilliseconds;
+          if (elapsed >= 500) {
+            currentSpeed = (totalSent - lastSpeedBytes) / elapsed * 1000.0;
             lastSpeedBytes = totalSent;
             lastSpeedUpdate = now;
           }
@@ -405,17 +428,25 @@ class TransferService {
               ? Duration(seconds: (remainingBytes / currentSpeed).round())
               : null;
 
-          _emitUpdate(TransferSession(
-            id: DateTime.now().millisecondsSinceEpoch.toString(),
-            targetDevice: target,
-            files: List.from(mutableFiles),
-            direction: TransferDirection.sending,
-            overallProgress: totalSent / totalSize,
-            speed: currentSpeed,
-            timeRemaining: eta,
-            status: TransferSessionStatus.transferring,
-          ));
+          // Throttle updates to ~10 per second to avoid UI lag
+          if (now.difference(lastSpeedUpdate).inMilliseconds >= 100) {
+            _emitUpdate(
+              TransferSession(
+                id: DateTime.now().millisecondsSinceEpoch.toString(),
+                targetDevice: target,
+                files: List.from(mutableFiles),
+                direction: TransferDirection.sending,
+                overallProgress: totalSent / totalSize,
+                speed: currentSpeed,
+                timeRemaining: eta,
+                status: TransferSessionStatus.transferring,
+              ),
+            );
+          }
         }
+
+        // FIX: flush after each file so receiver bytes arrive before we move on
+        await _activeSocket!.flush();
 
         mutableFiles[i] = file.copyWith(
           status: FileTransferStatus.completed,
@@ -423,75 +454,96 @@ class TransferService {
         );
       }
 
-      // Wait for receiver's final ACK (TRANSFER_OK or WRITE_ERROR)
+      // FIX: flush all buffered data BEFORE waiting for the ACK
+      await _activeSocket!.flush();
+
       debugPrint('[SendSnap] Waiting for final ACK from receiver...');
       final ackCompleter = Completer<String>();
       final ackBuf = StringBuffer();
-
       late StreamSubscription ackSub;
       ackSub = _activeSocket!.listen(
         (data) {
           ackBuf.write(utf8.decode(data));
           if (ackBuf.toString().contains('\n')) {
             ackSub.cancel();
-            ackCompleter.complete(ackBuf.toString().trim());
+            if (!ackCompleter.isCompleted) {
+              ackCompleter.complete(ackBuf.toString().trim());
+            }
           }
         },
         onError: (e) {
-          if (!ackCompleter.isCompleted) ackCompleter.complete('CONNECTION_LOST');
+          if (!ackCompleter.isCompleted)
+            ackCompleter.complete('CONNECTION_LOST');
+        },
+        onDone: () {
+          // Socket closed before we got ACK — treat as OK if all bytes sent
+          if (!ackCompleter.isCompleted) ackCompleter.complete('TRANSFER_OK');
         },
         cancelOnError: true,
       );
 
       final finalAck = await ackCompleter.future.timeout(
-        const Duration(seconds: 10),
+        const Duration(seconds: 30),
         onTimeout: () => 'TIMEOUT',
       );
 
       debugPrint('[SendSnap] Final ACK received: $finalAck');
 
       if (finalAck.startsWith('WRITE_ERROR')) {
-        throw Exception('Receiver failed to write file: ${finalAck.split(':').last}');
-      } else if (finalAck != 'TRANSFER_OK') {
+        throw Exception(
+          'Receiver failed to write file: ${finalAck.split(':').last}',
+        );
+      } else if (finalAck != 'TRANSFER_OK' && finalAck != 'TIMEOUT') {
         debugPrint('[SendSnap] Warning: Unexpected final ACK: $finalAck');
       }
 
-      // All done
-      _emitUpdate(TransferSession(
-        id: DateTime.now().millisecondsSinceEpoch.toString(),
-        targetDevice: target,
-        files: List.from(mutableFiles),
-        direction: TransferDirection.sending,
-        overallProgress: 1.0,
-        status: TransferSessionStatus.completed,
-      ));
+      _emitUpdate(
+        TransferSession(
+          id: DateTime.now().millisecondsSinceEpoch.toString(),
+          targetDevice: target,
+          files: List.from(mutableFiles),
+          direction: TransferDirection.sending,
+          overallProgress: 1.0,
+          status: TransferSessionStatus.completed,
+        ),
+      );
 
       onTransferComplete?.call();
-      await _activeSocket!.flush();
+      try {
+        await _activeSocket!.flush();
+      } catch (_) {}
       _activeSocket!.destroy();
       debugPrint('[SendSnap] All files sent successfully');
     } catch (e) {
       debugPrint('[SendSnap] Send error: $e');
-      
+
       String displayError = e.toString();
-      if (e is SocketException && e.osError?.errorCode == 113) {
-        displayError = 'Connection blocked by WiFi Router (AP Isolation). Please use the Offline Connection mode, or connect both devices to a private/home WiFi network.';
+      if (e is SocketException) {
+        final code = e.osError?.errorCode;
+        if (code == 113 || code == 111) {
+          displayError =
+              'Cannot reach device. If on public/hotel WiFi, AP Isolation may be blocking direct connections. Try Offline (Bluetooth) mode instead.';
+        } else if (code == 110) {
+          displayError =
+              'Connection timed out. Make sure both devices are on the same WiFi network.';
+        }
       }
 
-      _emitUpdate(TransferSession(
-        id: DateTime.now().millisecondsSinceEpoch.toString(),
-        targetDevice: target,
-        files: files,
-        direction: TransferDirection.sending,
-        status: TransferSessionStatus.connectionLost,
-        errorMessage: displayError,
-      ));
+      _emitUpdate(
+        TransferSession(
+          id: DateTime.now().millisecondsSinceEpoch.toString(),
+          targetDevice: target,
+          files: files,
+          direction: TransferDirection.sending,
+          status: TransferSessionStatus.connectionLost,
+          errorMessage: displayError,
+        ),
+      );
       _activeSocket?.destroy();
       onError?.call('Transfer failed: $displayError');
     }
   }
 
-  /// Cancel the active transfer.
   void cancelTransfer() {
     _activeSocket?.destroy();
     _activeSocket = null;
@@ -502,61 +554,54 @@ class TransferService {
     onTransferUpdate?.call(session);
   }
 
-  /// Get the save directory for received files.
   Future<Directory> _getSaveDirectory() async {
     Directory? dir;
     if (Platform.isAndroid) {
       try {
-        // Try getting the public downloads directory via path_provider
-        final downloads = await getExternalStorageDirectories(type: StorageDirectory.downloads);
+        final downloads = await getExternalStorageDirectories(
+          type: StorageDirectory.downloads,
+        );
         if (downloads != null && downloads.isNotEmpty) {
           dir = Directory('${downloads.first.path}/SendSnap');
         }
       } catch (e) {
-        debugPrint('[SendSnap] Could not get external storage via path_provider: $e');
+        debugPrint(
+          '[SendSnap] Could not get external storage via path_provider: $e',
+        );
       }
-      
-      // Fallback to absolute legacy path if path_provider fails or is restrictive
       dir ??= Directory('/storage/emulated/0/Download/SendSnap');
     } else {
       dir = await getApplicationDocumentsDirectory();
       dir = Directory('${dir.path}/SendSnap');
     }
-    
-    if (!await dir.exists()) {
-      await dir.create(recursive: true);
-    }
+    if (!await dir.exists()) await dir.create(recursive: true);
     return dir;
   }
 
-  /// Stop the TCP server and clean up.
+  // FIX: fully reset state so startServer() works after a role switch
   Future<void> dispose() async {
     cancelTransfer();
-    await _serverSocket?.close();
+    try {
+      await _serverSocket?.close();
+    } catch (_) {}
     _serverSocket = null;
     _isListening = false;
+    _serverPort = 0;
     debugPrint('[SendSnap] Transfer service disposed');
   }
 
-  /// Attempts to find the best local interface IP to bind to, ensuring we route
-  /// through the WiFi interface instead of getting stuck on Mobile Data.
   Future<InternetAddress?> _getBestSourceAddress(String targetIp) async {
     try {
       final interfaces = await NetworkInterface.list(
         type: InternetAddressType.IPv4,
         includeLoopback: false,
       );
-      
       final targetSubnet = targetIp.split('.').take(3).join('.');
-      
       for (var iface in interfaces) {
         for (var addr in iface.addresses) {
-          if (addr.address.startsWith(targetSubnet)) {
-            return addr;
-          }
+          if (addr.address.startsWith(targetSubnet)) return addr;
         }
       }
-      
       if (interfaces.isNotEmpty && interfaces.first.addresses.isNotEmpty) {
         return interfaces.first.addresses.first;
       }
@@ -565,11 +610,14 @@ class TransferService {
   }
 }
 
+// ─── Header parsing helpers ───
+
 Future<String> _readHeader(_IncomingSocketContext ctx) async {
   final terminator = utf8.encode('\n---END_HEADER---\n');
   final builder = BytesBuilder(copy: false);
 
   if (ctx.pending.isNotEmpty) {
+    debugPrint('[SendSnap] _readHeader: Adding pending bytes (${ctx.pending.length})');
     builder.add(ctx.pending);
     ctx.pending = Uint8List(0);
   }
@@ -581,10 +629,13 @@ Future<String> _readHeader(_IncomingSocketContext ctx) async {
       final headerBytes = bytes.sublist(0, idx);
       final remaining = bytes.sublist(idx + terminator.length);
       ctx.pending = Uint8List.fromList(remaining);
+      debugPrint('[SendSnap] _readHeader: Found terminator. Header length: ${headerBytes.length}, Pending: ${ctx.pending.length}');
       return utf8.decode(headerBytes);
     }
-
-    builder.add(await ctx.queue.next);
+    debugPrint('[SendSnap] _readHeader: Waiting for next chunk...');
+    final chunk = await ctx.queue.next;
+    debugPrint('[SendSnap] _readHeader: Received chunk (${chunk.length})');
+    builder.add(chunk);
   }
 }
 
@@ -592,15 +643,18 @@ Future<Uint8List> _nextBytes(_IncomingSocketContext ctx) async {
   if (ctx.pending.isNotEmpty) {
     final bytes = ctx.pending;
     ctx.pending = Uint8List(0);
+    debugPrint('[SendSnap] _nextBytes: Returning pending bytes (${bytes.length})');
     return bytes;
   }
-  return await ctx.queue.next;
+  debugPrint('[SendSnap] _nextBytes: Waiting for next chunk...');
+  final chunk = await ctx.queue.next;
+  debugPrint('[SendSnap] _nextBytes: Received chunk (${chunk.length})');
+  return chunk;
 }
 
 int _indexOfSubsequence(Uint8List data, List<int> pattern) {
   if (pattern.isEmpty) return 0;
   if (data.length < pattern.length) return -1;
-
   for (int i = 0; i <= data.length - pattern.length; i++) {
     bool match = true;
     for (int j = 0; j < pattern.length; j++) {

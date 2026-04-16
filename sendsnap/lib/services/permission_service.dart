@@ -32,11 +32,14 @@ class PermissionService {
         results[Permission.storage] = await Permission.storage.request();
       }
 
-      // Bluetooth for Offline Mode (Nearby Connections)
+      // Bluetooth is no longer required for the mDNS + TCP method.
+      // We keep these lines commented out in case they're needed for legacy/offline mode.
+      /*
       results[Permission.bluetooth] = await Permission.bluetooth.request();
       results[Permission.bluetoothAdvertise] = await Permission.bluetoothAdvertise.request();
       results[Permission.bluetoothConnect] = await Permission.bluetoothConnect.request();
       results[Permission.bluetoothScan] = await Permission.bluetoothScan.request();
+      */
     }
 
     // Diagnostic logging
@@ -45,8 +48,6 @@ class PermissionService {
     }
 
     // Return true only if the primary storage/media category is granted
-    // This allows the app to proceed even if non-critical (like location) is denied,
-    // though storage is essential for writing received files.
     return await hasStoragePermission();
   }
 
