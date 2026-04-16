@@ -287,10 +287,13 @@ class TransferService {
     required String senderName,
   }) async {
     try {
-      debugPrint('[SendSnap] Connecting to ${target.ip}:${target.port}');
+      final sourceAddr = await _getBestSourceAddress(target.ip);
+      debugPrint('[SendSnap] Connecting from ${sourceAddr?.address ?? "any"} to ${target.ip}:${target.port}');
+      
       _activeSocket = await Socket.connect(
         target.ip,
         target.port,
+        sourceAddress: sourceAddr,
         timeout: const Duration(seconds: 10),
       );
 
@@ -469,16 +472,22 @@ class TransferService {
       debugPrint('[SendSnap] All files sent successfully');
     } catch (e) {
       debugPrint('[SendSnap] Send error: $e');
+      
+      String displayError = e.toString();
+      if (e is SocketException && e.osError?.errorCode == 113) {
+        displayError = 'Connection blocked by WiFi Router (AP Isolation). Please use the Offline Connection mode, or connect both devices to a private/home WiFi network.';
+      }
+
       _emitUpdate(TransferSession(
         id: DateTime.now().millisecondsSinceEpoch.toString(),
         targetDevice: target,
         files: files,
         direction: TransferDirection.sending,
         status: TransferSessionStatus.connectionLost,
-        errorMessage: e.toString(),
+        errorMessage: displayError,
       ));
       _activeSocket?.destroy();
-      onError?.call('Transfer failed: $e');
+      onError?.call('Transfer failed: $displayError');
     }
   }
 
@@ -527,6 +536,32 @@ class TransferService {
     _serverSocket = null;
     _isListening = false;
     debugPrint('[SendSnap] Transfer service disposed');
+  }
+
+  /// Attempts to find the best local interface IP to bind to, ensuring we route
+  /// through the WiFi interface instead of getting stuck on Mobile Data.
+  Future<InternetAddress?> _getBestSourceAddress(String targetIp) async {
+    try {
+      final interfaces = await NetworkInterface.list(
+        type: InternetAddressType.IPv4,
+        includeLoopback: false,
+      );
+      
+      final targetSubnet = targetIp.split('.').take(3).join('.');
+      
+      for (var iface in interfaces) {
+        for (var addr in iface.addresses) {
+          if (addr.address.startsWith(targetSubnet)) {
+            return addr;
+          }
+        }
+      }
+      
+      if (interfaces.isNotEmpty && interfaces.first.addresses.isNotEmpty) {
+        return interfaces.first.addresses.first;
+      }
+    } catch (_) {}
+    return null;
   }
 }
 

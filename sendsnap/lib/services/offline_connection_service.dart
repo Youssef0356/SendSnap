@@ -111,6 +111,9 @@ class OfflineConnectionService {
     required String senderName,
   }) async {
     try {
+      _payloadMap.clear();
+      _receivedPayloadPaths.clear();
+      
       _currentSession = TransferSession(
         id: DateTime.now().millisecondsSinceEpoch.toString(),
         targetDevice: target,
@@ -152,6 +155,9 @@ class OfflineConnectionService {
   }
 
   Future<void> acceptTransfer(IncomingRequest request) async {
+    _payloadMap.clear();
+    _receivedPayloadPaths.clear();
+    
     // Notify sender we accepted
     final msg = {'type': 'accept'};
     final jsonBytes = utf8.encode(jsonEncode(msg));
@@ -245,8 +251,19 @@ class OfflineConnectionService {
       }
     } else if (payload.type == PayloadType.FILE) {
       // Incoming file payload
-      // Wait for it to finish transferring (tracked in _onPayloadTransferUpdate)
-      debugPrint('[Offline] Started receiving file payload ${payload.id}');
+      debugPrint('[Offline] Started receiving file payload ${payload.id} at ${payload.uri ?? payload.filePath}');
+      
+      if (_currentSession != null) {
+        // Map this payload ID to the next unassigned incoming file
+        final unassignedFile = _currentSession!.files.firstWhere(
+            (f) => !_payloadMap.values.any((mapped) => mapped.name == f.name),
+            orElse: () => _currentSession!.files.first);
+            
+        _payloadMap[payload.id] = unassignedFile;
+        if (payload.uri != null || payload.filePath != null) {
+          _receivedPayloadPaths[payload.id] = payload.uri ?? payload.filePath!;
+        }
+      }
     }
   }
 
@@ -263,33 +280,75 @@ class OfflineConnectionService {
     }
   }
 
+  final Map<int, String> _receivedPayloadPaths = {};
+
   void _onPayloadTransferUpdate(String endpointId, PayloadTransferUpdate update) async {
     if (_currentSession == null) return;
 
+    // Ignore payload updates for things we aren't explicitly tracking as FILES
+    if (!_payloadMap.containsKey(update.id)) return;
+
+    final file = _payloadMap[update.id]!;
+    final mutableFiles = List<TransferFile>.from(_currentSession!.files);
+    final fileIndex = mutableFiles.indexWhere((f) => f.name == file.name);
+    if (fileIndex == -1) return;
+
     if (update.status == PayloadStatus.IN_PROGRESS) {
-      // Handling progress could be tricky as we don't automatically know which file without tracking.
-      // But we can approximate overall progress.
-      // For MVP, we pass bytesTransferred and totalBytes.
-      // This varies drastically depending on sending or receiving, so we emit generic progress.
-    } else if (update.status == PayloadStatus.SUCCESS) {
-      // If we received a file, move it to Downloads
-      if (_currentSession!.direction == TransferDirection.receiving) {
-          await _getSaveDirectory();
-          // Nearby Connection saves files anonymously to cache, we have to move it.
-          // In nearby_connections, payload.filePath is missing on receive end during FILE payload event
-          // Wait, 'update' doesn't contain the file name. 
-          // For simplicity in this offline plan, we will mark overall progress as completed initially.
-          // Note for full file reconstruction: Need robust payload ID mapping.
+      if (update.totalBytes > 0) {
+        mutableFiles[fileIndex] = mutableFiles[fileIndex].copyWith(
+          status: FileTransferStatus.transferring,
+          progress: update.bytesTransferred / update.totalBytes,
+        );
+        _currentSession = _currentSession!.copyWith(files: mutableFiles);
+        onTransferUpdate?.call(_currentSession!);
       }
-      
-      // If all files done
-      _currentSession = _currentSession!.copyWith(
-          overallProgress: 1.0, 
-          status: TransferSessionStatus.completed
+    } else if (update.status == PayloadStatus.SUCCESS) {
+      mutableFiles[fileIndex] = mutableFiles[fileIndex].copyWith(
+        status: FileTransferStatus.completed,
+        progress: 1.0,
       );
+
+      // On receiving end, the file needs to be moved to the SendSnap downloads folder
+      if (_currentSession!.direction == TransferDirection.receiving) {
+        try {
+          final saveDir = await _getSaveDirectory();
+          final savePath = '${saveDir.path}/${file.name}';
+          final sourcePath = _receivedPayloadPaths[update.id];
+          
+          if (sourcePath != null) {
+            // Attempt to copy from the generic path Nearby Connections downloaded it to
+            final sourceFile = File(sourcePath.replaceFirst('file://', ''));
+            if (await sourceFile.exists()) {
+              await sourceFile.copy(savePath);
+              mutableFiles[fileIndex] = mutableFiles[fileIndex].copyWith(path: savePath);
+            }
+          }
+        } catch (e) {
+          debugPrint('[Offline] Failed to move received file: $e');
+        }
+      }
+
+      _currentSession = _currentSession!.copyWith(files: mutableFiles);
+      
+      final allCompleted = _currentSession!.files.every((f) => f.status == FileTransferStatus.completed);
+
+      if (allCompleted) {
+        _currentSession = _currentSession!.copyWith(
+          overallProgress: 1.0, 
+          status: TransferSessionStatus.completed,
+        );
+        onTransferUpdate?.call(_currentSession!);
+        onTransferComplete?.call();
+        Nearby().disconnectFromEndpoint(endpointId);
+      } else {
+        onTransferUpdate?.call(_currentSession!);
+      }
+    } else if (update.status == PayloadStatus.FAILURE || update.status == PayloadStatus.CANCELED) {
+      mutableFiles[fileIndex] = mutableFiles[fileIndex].copyWith(
+        status: FileTransferStatus.failed,
+      );
+      _currentSession = _currentSession!.copyWith(files: mutableFiles);
       onTransferUpdate?.call(_currentSession!);
-      onTransferComplete?.call();
-      Nearby().disconnectFromEndpoint(endpointId);
     }
   }
 
