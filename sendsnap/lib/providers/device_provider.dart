@@ -3,6 +3,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:device_info_plus/device_info_plus.dart';
 import 'dart:io';
 import 'dart:math';
+import 'dart:async';
 import '../models/device.dart';
 import '../services/nearby_service.dart';
 import '../services/permission_service.dart';
@@ -17,6 +18,8 @@ class DeviceProvider with ChangeNotifier {
   
   final Map<String, NearbyDevice> _foundDevices = {};
   NearbyDevice? _connectedDevice;
+  Completer<bool>? _connectionCompleter;
+  String? _pendingConnectionId;
   
   String get displayName => _displayName;
   bool get isAdvertising => _isAdvertising;
@@ -37,21 +40,33 @@ class DeviceProvider with ChangeNotifier {
       _foundDevices[device.endpointId] = device;
       notifyListeners();
     };
-    
+
     _nearbyService.onDeviceLost = (id) {
       _foundDevices.remove(id);
       notifyListeners();
     };
-    
+
+    _nearbyService.onConnectionInitiated = (id, deviceName) async {
+      // Auto-accept connection from both sender and receiver sides
+      // Nearby Connections requires both endpoints to accept
+      await _nearbyService.acceptConnection(id);
+    };
+
     _nearbyService.onConnectionResult = (id, success) {
       if (success) {
         _connectedDevice = _foundDevices[id];
       } else {
         _connectedDevice = null;
       }
+      // Complete the pending connection future if waiting
+      if (_pendingConnectionId == id && _connectionCompleter != null) {
+        _connectionCompleter!.complete(success);
+        _connectionCompleter = null;
+        _pendingConnectionId = null;
+      }
       notifyListeners();
     };
-    
+
     _nearbyService.onDisconnected = (id) {
       if (_connectedDevice?.endpointId == id) {
         _connectedDevice = null;
@@ -164,5 +179,28 @@ class DeviceProvider with ChangeNotifier {
     _isDiscovering = false;
     _foundDevices.clear();
     notifyListeners();
+  }
+
+  /// Requests connection and waits for the result callback.
+  /// Returns true only when connection is fully established.
+  Future<bool> requestConnectionAndWait(String endpointId) async {
+    _connectionCompleter = Completer<bool>();
+    _pendingConnectionId = endpointId;
+
+    bool requestSent = await _nearbyService.requestConnection(_displayName, endpointId);
+    if (!requestSent) {
+      _connectionCompleter = null;
+      _pendingConnectionId = null;
+      return false;
+    }
+
+    // Wait up to 10 seconds for connection result
+    try {
+      bool connected = await _connectionCompleter!.future.timeout(const Duration(seconds: 10));
+      return connected;
+    } on TimeoutException {
+      _pendingConnectionId = null;
+      return false;
+    }
   }
 }

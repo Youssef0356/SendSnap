@@ -70,26 +70,30 @@ class HomeScreen extends StatelessWidget {
 
                           // BUSY STATE (Radar + Discovery)
                           if (isBusy)
-                            Column(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                RadarWidget(
-                                  active: true,
-                                  label: devProv.isAdvertising ? 'Waiting for sender...' : 'Searching for devices...',
+                            Expanded(
+                              child: SingleChildScrollView(
+                                child: Column(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    RadarWidget(
+                                      active: true,
+                                      label: devProv.isAdvertising ? 'Waiting for sender...' : 'Searching for devices...',
+                                    ),
+                                    if (devProv.isDiscovering && devProv.nearbyDevices.isNotEmpty)
+                                      _buildDeviceDiscovery(context, devProv, transProv),
+
+                                    const SizedBox(height: AppSpacing.l),
+                                    Center(
+                                      child: TextButton.icon(
+                                        onPressed: () => devProv.stopAll(),
+                                        icon: const Icon(Icons.close),
+                                        label: const Text('Cancel'),
+                                        style: TextButton.styleFrom(foregroundColor: AppColors.error),
+                                      ),
+                                    ),
+                                  ],
                                 ),
-                                if (devProv.isDiscovering && devProv.nearbyDevices.isNotEmpty)
-                                  _buildDeviceDiscovery(context, devProv, transProv),
-                                
-                                const SizedBox(height: AppSpacing.l),
-                                Center(
-                                  child: TextButton.icon(
-                                    onPressed: () => devProv.stopAll(),
-                                    icon: const Icon(Icons.close),
-                                    label: const Text('Cancel'),
-                                    style: TextButton.styleFrom(foregroundColor: AppColors.error),
-                                  ),
-                                ),
-                              ],
+                              ),
                             ),
                         ],
                       ),
@@ -265,34 +269,35 @@ class HomeScreen extends StatelessWidget {
 
   Widget? _buildBottomTransferStatus(BuildContext context, TransferProvider transProv) {
     if (transProv.activeTransfer == null) return null;
-    
+
     final t = transProv.activeTransfer!;
     return GestureDetector(
       onTap: () => Navigator.pushNamed(context, '/transfer'),
       child: Container(
-        height: 70,
-        margin: const EdgeInsets.all(AppSpacing.m),
+        height: 56,
+        margin: const EdgeInsets.symmetric(horizontal: AppSpacing.m, vertical: AppSpacing.s),
         padding: const EdgeInsets.symmetric(horizontal: AppSpacing.m),
         decoration: BoxDecoration(
           color: AppColors.primary,
-          borderRadius: BorderRadius.circular(20),
+          borderRadius: BorderRadius.circular(16),
         ),
         child: Row(
           children: [
-            const Icon(Icons.sync_rounded, color: Colors.white),
+            const Icon(Icons.sync_rounded, color: Colors.white, size: 20),
             const SizedBox(width: 12),
             Expanded(
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('Sending ${t.fileName}', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-                  LinearProgressIndicator(value: t.progress, backgroundColor: Colors.white24, color: Colors.white),
+                  Text('Sending ${t.fileName}', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12), overflow: TextOverflow.ellipsis, maxLines: 1),
+                  const SizedBox(height: 4),
+                  LinearProgressIndicator(value: t.progress, backgroundColor: Colors.white24, color: Colors.white, minHeight: 3),
                 ],
               ),
             ),
             const SizedBox(width: 12),
-            Text('${(t.progress * 100).toInt()}%', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+            Text('${(t.progress * 100).toInt()}%', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12)),
           ],
         ),
       ),
@@ -314,13 +319,17 @@ class HomeScreen extends StatelessWidget {
 
   Future<void> _initiateTransfer(BuildContext context, NearbyDevice target, DeviceProvider devProv, TransferProvider transProv) async {
     if (_selectedFile == null) return;
-    
-    // Request connection
-    bool connected = await devProv.nearbyService.requestConnection(devProv.displayName, target.endpointId);
+
+    // Request connection and wait for full handshake
+    bool connected = await devProv.requestConnectionAndWait(target.endpointId);
     if (connected) {
        await transProv.sendFile(target.endpointId, _selectedFile!, devProv.nearbyService);
        Navigator.pushNamed(context, '/transfer');
        _selectedFile = null;
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Failed to connect to device')),
+      );
     }
   }
 }

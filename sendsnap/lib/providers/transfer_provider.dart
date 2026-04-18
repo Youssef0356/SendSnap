@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:nearby_connections/nearby_connections.dart';
+import 'package:path/path.dart' as path;
 import 'dart:io';
 import '../models/transfer.dart';
 import '../models/payload.dart';
@@ -105,7 +106,7 @@ class TransferProvider with ChangeNotifier {
     final transferId = DateTime.now().millisecondsSinceEpoch.toString();
     final transfer = FileTransfer(
       id: transferId,
-      fileName: file.path.split('/').last,
+      fileName: path.basename(file.path),
       fileSize: await file.length(),
       status: TransferStatus.inProgress,
     );
