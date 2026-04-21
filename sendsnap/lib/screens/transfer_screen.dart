@@ -11,10 +11,7 @@ class TransferScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final transProv = Provider.of<TransferProvider>(context);
-    final active = transProv.activeTransfer;
-    final last = transProv.transfers.isNotEmpty ? transProv.transfers.first : null;
-    
-    final current = active ?? last;
+    final current = transProv.currentTransfer;
 
     if (current == null) {
       return Scaffold(
@@ -29,11 +26,18 @@ class TransferScreen extends StatelessWidget {
         backgroundColor: Colors.white,
         elevation: 0,
         leading: IconButton(
-          onPressed: () => Navigator.pop(context),
+          onPressed: () {
+            // Dismiss the active transfer if completed before popping
+            if (current.status == TransferStatus.completed || 
+                current.status == TransferStatus.failed) {
+              transProv.dismissActiveTransfer();
+            }
+            Navigator.pop(context);
+          },
           icon: const Icon(Icons.close, color: AppColors.textPrimary),
         ),
         title: Text(
-          current.status == TransferStatus.completed ? 'Success' : 'Transferring',
+          _getTitle(current.status),
           style: Theme.of(context).textTheme.titleLarge,
         ),
         centerTitle: true,
@@ -58,13 +62,27 @@ class TransferScreen extends StatelessWidget {
               ),
               const SizedBox(height: AppSpacing.xxl),
               if (current.status == TransferStatus.completed)
-                _buildCompletedActions(context)
+                _buildCompletedActions(context, transProv)
               else if (current.status == TransferStatus.failed)
-                _buildFailedActions(context)
+                _buildFailedActions(context, transProv)
               else
-                 Text(
-                   'Sending to connected device...',
-                   style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: AppColors.primary, fontWeight: FontWeight.bold),
+                 Column(
+                   children: [
+                     Text(
+                       'Transferring...',
+                       style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                         color: AppColors.primary, 
+                         fontWeight: FontWeight.bold,
+                       ),
+                     ),
+                     const SizedBox(height: 8),
+                     Text(
+                       'Keep both devices nearby',
+                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                         color: AppColors.textSecondary,
+                       ),
+                     ),
+                   ],
                  ),
             ],
           ),
@@ -73,7 +91,27 @@ class TransferScreen extends StatelessWidget {
     );
   }
 
+  String _getTitle(TransferStatus status) {
+    switch (status) {
+      case TransferStatus.completed:
+        return 'Transfer Complete!';
+      case TransferStatus.failed:
+        return 'Transfer Failed';
+      case TransferStatus.cancelled:
+        return 'Transfer Cancelled';
+      default:
+        return 'Transferring...';
+    }
+  }
+
   Widget _buildProgressIndicator(BuildContext context, FileTransfer transfer) {
+    final isCompleted = transfer.status == TransferStatus.completed;
+    final isFailed = transfer.status == TransferStatus.failed;
+    
+    Color progressColor = AppColors.primary;
+    if (isCompleted) progressColor = AppColors.success;
+    if (isFailed) progressColor = AppColors.error;
+
     return Stack(
       alignment: Alignment.center,
       children: [
@@ -83,19 +121,19 @@ class TransferScreen extends StatelessWidget {
           child: CircularProgressIndicator(
             value: transfer.progress,
             strokeWidth: 12,
-            backgroundColor: AppColors.primary.withOpacity(0.1),
-            valueColor: AlwaysStoppedAnimation<Color>(
-               transfer.status == TransferStatus.completed ? AppColors.success : AppColors.primary
-            ),
+            backgroundColor: progressColor.withOpacity(0.1),
+            valueColor: AlwaysStoppedAnimation<Color>(progressColor),
             strokeCap: StrokeCap.round,
           ),
         ),
         Column(
           children: [
             Icon(
-              transfer.status == TransferStatus.completed ? Icons.check_circle_rounded : Icons.sync_rounded,
+              isCompleted ? Icons.check_circle_rounded 
+                : isFailed ? Icons.error_rounded 
+                : Icons.sync_rounded,
               size: 64,
-              color: transfer.status == TransferStatus.completed ? AppColors.success : AppColors.primary,
+              color: progressColor,
             ),
             const SizedBox(height: 8),
             Text(
@@ -108,27 +146,47 @@ class TransferScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildCompletedActions(BuildContext context) {
+  Widget _buildCompletedActions(BuildContext context, TransferProvider transProv) {
     return Column(
       children: [
         const Icon(Icons.celebration_rounded, color: AppColors.warning, size: 48),
-        const SizedBox(height: 16),
+        const SizedBox(height: 12),
+        Text(
+          'File saved to Downloads/SendSnap',
+          style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: AppColors.success),
+          textAlign: TextAlign.center,
+        ),
+        const SizedBox(height: 24),
         ElevatedButton(
-          onPressed: () => Navigator.pop(context),
-          style: ElevatedButton.styleFrom(minimumSize: const Size(200, 56)),
-          child: const Text('DISMISS'),
+          onPressed: () {
+            transProv.dismissActiveTransfer();
+            Navigator.pop(context);
+          },
+          style: ElevatedButton.styleFrom(
+            minimumSize: const Size(200, 56),
+            backgroundColor: AppColors.success,
+          ),
+          child: const Text('DONE', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
         ),
       ],
     );
   }
 
-  Widget _buildFailedActions(BuildContext context) {
+  Widget _buildFailedActions(BuildContext context, TransferProvider transProv) {
     return Column(
       children: [
+        const Icon(Icons.error_outline_rounded, color: AppColors.error, size: 48),
+        const SizedBox(height: 12),
         const Text('Something went wrong', style: TextStyle(color: AppColors.error)),
-        const SizedBox(height: 16),
+        const SizedBox(height: 24),
         ElevatedButton(
-          onPressed: () => Navigator.pop(context),
+          onPressed: () {
+            transProv.dismissActiveTransfer();
+            Navigator.pop(context);
+          },
+          style: ElevatedButton.styleFrom(
+            minimumSize: const Size(200, 56),
+          ),
           child: const Text('BACK'),
         ),
       ],

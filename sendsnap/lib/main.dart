@@ -37,8 +37,16 @@ void main() {
   );
 }
 
-class SendSnapApp extends StatelessWidget {
+class SendSnapApp extends StatefulWidget {
   const SendSnapApp({super.key});
+
+  @override
+  State<SendSnapApp> createState() => _SendSnapAppState();
+}
+
+class _SendSnapAppState extends State<SendSnapApp> {
+  bool _syncSetup = false;
+  final GlobalKey<NavigatorState> _navigatorKey = GlobalKey<NavigatorState>();
 
   @override
   Widget build(BuildContext context) {
@@ -46,6 +54,7 @@ class SendSnapApp extends StatelessWidget {
       title: 'SendSnap',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.lightTheme(),
+      navigatorKey: _navigatorKey,
       initialRoute: '/splash',
       routes: {
         '/splash': (context) => const SplashScreen(),
@@ -53,27 +62,40 @@ class SendSnapApp extends StatelessWidget {
         '/transfer': (context) => const TransferScreen(),
         '/settings': (context) => const SettingsScreen(),
       },
-      // Handle the payload callback from Nearby Service by notifying TransferProvider
-      // Note: In a production app, we'd use a higher-level state management synchronization.
+      // Wire up the payload callbacks between providers ONCE
       builder: (context, child) {
-        final devProv = Provider.of<DeviceProvider>(context, listen: false);
-        final transProv = Provider.of<TransferProvider>(context, listen: false);
-        
-        // Wire up callbacks once
-        _setupSynchronization(devProv, transProv);
-        
+        if (!_syncSetup) {
+          final devProv = Provider.of<DeviceProvider>(context, listen: false);
+          final transProv = Provider.of<TransferProvider>(context, listen: false);
+          _setupSynchronization(devProv, transProv);
+          _syncSetup = true;
+        }
         return child!;
       },
     );
   }
 
   void _setupSynchronization(DeviceProvider devProv, TransferProvider transProv) {
+    // Wire up nearby service callbacks to transfer provider
     devProv.nearbyService.onMetadataReceived = (endpoint, wrapper) {
       transProv.handleIncomingMetadata(endpoint, wrapper, devProv.nearbyService);
     };
     
     devProv.nearbyService.onPayloadUpdate = (endpoint, payloadId, update) {
       transProv.updateTransferProgress(payloadId, update);
+    };
+
+    // Auto-navigate receiver to transfer screen when an incoming transfer starts
+    transProv.onTransferStarted = () {
+      debugPrint('[SendSnapApp] Transfer started — navigating to transfer screen');
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _navigatorKey.currentState?.pushNamed('/transfer');
+      });
+    };
+
+    // Optional: could show a notification when transfer completes
+    transProv.onTransferCompleted = () {
+      debugPrint('[SendSnapApp] Transfer completed!');
     };
   }
 }

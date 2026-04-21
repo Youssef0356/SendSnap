@@ -4,13 +4,21 @@ import 'package:file_picker/file_picker.dart';
 import 'dart:io';
 import '../providers/device_provider.dart';
 import '../providers/transfer_provider.dart';
+import '../services/permission_service.dart';
 import '../config/constants.dart';
 import '../models/device.dart';
 import '../widgets/radar_widget.dart';
 import '../widgets/banner_ad_widget.dart';
 
-class HomeScreen extends StatelessWidget {
+class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
+
+  @override
+  State<HomeScreen> createState() => _HomeScreenState();
+}
+
+class _HomeScreenState extends State<HomeScreen> {
+  File? _selectedFile;
 
   @override
   Widget build(BuildContext context) {
@@ -18,6 +26,9 @@ class HomeScreen extends StatelessWidget {
     final transProv = Provider.of<TransferProvider>(context);
 
     bool isBusy = devProv.isAdvertising || devProv.isDiscovering;
+
+    // Show error snackbar if there's a permission/discovery error
+    _showErrorIfNeeded(context, devProv);
 
     return Scaffold(
       body: SafeArea(
@@ -69,8 +80,9 @@ class HomeScreen extends StatelessWidget {
                           ),
 
                           // BUSY STATE (Radar + Discovery)
+                          // Use Positioned.fill instead of Expanded (Expanded is invalid inside Stack)
                           if (isBusy)
-                            Expanded(
+                            Positioned.fill(
                               child: SingleChildScrollView(
                                 child: Column(
                                   mainAxisAlignment: MainAxisAlignment.center,
@@ -85,7 +97,10 @@ class HomeScreen extends StatelessWidget {
                                     const SizedBox(height: AppSpacing.l),
                                     Center(
                                       child: TextButton.icon(
-                                        onPressed: () => devProv.stopAll(),
+                                        onPressed: () {
+                                          devProv.stopAll();
+                                          _selectedFile = null;
+                                        },
                                         icon: const Icon(Icons.close),
                                         label: const Text('Cancel'),
                                         style: TextButton.styleFrom(foregroundColor: AppColors.error),
@@ -108,6 +123,32 @@ class HomeScreen extends StatelessWidget {
       ),
       bottomNavigationBar: _buildBottomTransferStatus(context, transProv),
     );
+  }
+
+  void _showErrorIfNeeded(BuildContext context, DeviceProvider devProv) {
+    if (devProv.lastError != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && devProv.lastError != null) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(devProv.lastError!),
+              backgroundColor: AppColors.error,
+              duration: const Duration(seconds: 5),
+              action: SnackBarAction(
+                label: 'SETTINGS',
+                textColor: Colors.white,
+                onPressed: () {
+                  devProv.clearError();
+                  // Open app settings so user can grant permissions
+                  PermissionService().openSettings();
+                },
+              ),
+            ),
+          );
+          devProv.clearError();
+        }
+      });
+    }
   }
 
   Widget _buildHeader(BuildContext context, DeviceProvider devProv) {
@@ -306,30 +347,46 @@ class HomeScreen extends StatelessWidget {
 
   Future<void> _handleSend(BuildContext context, DeviceProvider devProv, TransferProvider transProv) async {
     FilePickerResult? result = await FilePicker.platform.pickFiles(allowMultiple: false);
-    if (result != null) {
-      File file = File(result.files.single.path!);
-      _selectedFile = file;
+    if (result != null && result.files.single.path != null) {
+      setState(() {
+        _selectedFile = File(result.files.single.path!);
+      });
       
       // Auto-start discovery
       await devProv.toggleDiscovery();
     }
   }
 
-  static File? _selectedFile;
-
   Future<void> _initiateTransfer(BuildContext context, NearbyDevice target, DeviceProvider devProv, TransferProvider transProv) async {
     if (_selectedFile == null) return;
+
+    // Show a connecting indicator
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Connecting to device...'),
+        duration: Duration(seconds: 2),
+      ),
+    );
 
     // Request connection and wait for full handshake
     bool connected = await devProv.requestConnectionAndWait(target.endpointId);
     if (connected) {
        await transProv.sendFile(target.endpointId, _selectedFile!, devProv.nearbyService);
-       Navigator.pushNamed(context, '/transfer');
-       _selectedFile = null;
+       if (mounted) {
+         Navigator.pushNamed(context, '/transfer');
+       }
+       setState(() {
+         _selectedFile = null;
+       });
     } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Failed to connect to device')),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Failed to connect to device. Make sure the other device is in Receive mode.'),
+            backgroundColor: AppColors.error,
+          ),
+        );
+      }
     }
   }
 }

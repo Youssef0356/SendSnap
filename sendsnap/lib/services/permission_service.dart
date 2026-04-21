@@ -2,7 +2,6 @@ import 'dart:io';
 import 'package:device_info_plus/device_info_plus.dart';
 import 'package:flutter/foundation.dart';
 import 'package:permission_handler/permission_handler.dart';
-
 /// Manages runtime permissions for SendSnap.
 class PermissionService {
   /// Check and request all required permissions.
@@ -13,8 +12,12 @@ class PermissionService {
     if (Platform.isAndroid) {
       final androidVersion = await _getAndroidVersion();
 
-      // Permissions required for discovery and networking
-      // Bluetooth Permissions (Mandatory for Android 12+ Nearby Connections)
+      // ── Location (REQUIRED for Nearby Connections on all Android versions) ──
+      // Nearby Connections uses BLE + WiFi Direct which need location on Android.
+      // On Android 12+ fine location is still required by GMS Nearby.
+      results[Permission.location] = await Permission.location.request();
+      
+      // ── Bluetooth (Android 12+) ──
       if (androidVersion >= 31) {
         results[Permission.bluetoothScan] = await Permission.bluetoothScan.request();
         results[Permission.bluetoothConnect] = await Permission.bluetoothConnect.request();
@@ -23,13 +26,18 @@ class PermissionService {
         results[Permission.bluetooth] = await Permission.bluetooth.request();
       }
 
+      // ── Nearby WiFi Devices (Android 13+) ──
       if (androidVersion >= 33) {
-        // Android 13+ uses granular media permissions + Nearby WiFi
+        results[Permission.nearbyWifiDevices] =
+            await Permission.nearbyWifiDevices.request();
+      }
+
+      // ── Storage / Media ──
+      if (androidVersion >= 33) {
+        // Android 13+ uses granular media permissions
         results[Permission.photos] = await Permission.photos.request();
         results[Permission.videos] = await Permission.videos.request();
         results[Permission.audio] = await Permission.audio.request();
-        results[Permission.nearbyWifiDevices] =
-            await Permission.nearbyWifiDevices.request();
       } else if (androidVersion >= 30) {
         // Android 11-12
         results[Permission.manageExternalStorage] =
@@ -46,6 +54,7 @@ class PermissionService {
     }
 
     // Return true only if core permissions are granted
+    bool locationOk = await hasLocationPermission();
     bool storageOk = await hasStoragePermission();
     bool bluetoothOk = true;
     if (Platform.isAndroid) {
@@ -57,7 +66,28 @@ class PermissionService {
       }
     }
     
-    return storageOk && bluetoothOk;
+    debugPrint('[SendSnap] Permission summary — location: $locationOk, storage: $storageOk, bluetooth: $bluetoothOk');
+    return locationOk && storageOk && bluetoothOk;
+  }
+
+  /// Check if location permission is granted (required for Nearby Connections).
+  Future<bool> hasLocationPermission() async {
+    if (Platform.isAndroid) {
+      return await Permission.location.isGranted;
+    }
+    return true;
+  }
+
+  /// Ensure location services (GPS) are enabled on the device.
+  /// Nearby Connections requires location services to be ON.
+  Future<bool> ensureLocationEnabled() async {
+    if (Platform.isAndroid) {
+      if (!await Permission.location.serviceStatus.isEnabled) {
+        debugPrint('[SendSnap] Location services are DISABLED — Nearby Connections will fail');
+        return false;
+      }
+    }
+    return true;
   }
 
   /// Check if we have storage read permission.
@@ -84,6 +114,39 @@ class PermissionService {
       }
     }
     return true; // Not required on older versions
+  }
+
+  /// Check if ALL permissions needed for Nearby Connections are granted.
+  Future<bool> hasNearbyConnectionsPermissions() async {
+    if (!Platform.isAndroid) return true;
+    
+    final androidVersion = await _getAndroidVersion();
+    
+    // Location is always required for Nearby Connections
+    if (!await Permission.location.isGranted) {
+      debugPrint('[SendSnap] Missing location permission');
+      return false;
+    }
+    
+    // Bluetooth permissions for Android 12+
+    if (androidVersion >= 31) {
+      if (!await Permission.bluetoothScan.isGranted ||
+          !await Permission.bluetoothConnect.isGranted ||
+          !await Permission.bluetoothAdvertise.isGranted) {
+        debugPrint('[SendSnap] Missing bluetooth permissions');
+        return false;
+      }
+    }
+    
+    // Nearby WiFi for Android 13+
+    if (androidVersion >= 33) {
+      if (!await Permission.nearbyWifiDevices.isGranted) {
+        debugPrint('[SendSnap] Missing nearbyWifiDevices permission');
+        return false;
+      }
+    }
+    
+    return true;
   }
 
   /// Open app settings so user can manually grant permissions.

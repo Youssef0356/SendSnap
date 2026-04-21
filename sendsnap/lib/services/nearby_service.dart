@@ -83,9 +83,21 @@ class NearbyService {
   }
 
   Future<void> stopAll() async {
-    await _nearby.stopAdvertising();
-    await _nearby.stopDiscovery();
-    await _nearby.stopAllEndpoints();
+    try {
+      await _nearby.stopAdvertising();
+    } catch (e) {
+      debugPrint('[NearbyService] stopAdvertising error: $e');
+    }
+    try {
+      await _nearby.stopDiscovery();
+    } catch (e) {
+      debugPrint('[NearbyService] stopDiscovery error: $e');
+    }
+    try {
+      await _nearby.stopAllEndpoints();
+    } catch (e) {
+      debugPrint('[NearbyService] stopAllEndpoints error: $e');
+    }
   }
 
   Future<bool> requestConnection(String deviceName, String endpointId) async {
@@ -110,32 +122,44 @@ class NearbyService {
   }
 
   Future<void> acceptConnection(String endpointId) async {
-    await _nearby.acceptConnection(
-      endpointId,
-      onPayLoadRecieved: (endpoint, payload) {
-        if (payload.type == PayloadType.BYTES) {
-          final jsonStr = utf8.decode(payload.bytes!);
-          final wrapper = PayloadWrapper.fromJson(jsonDecode(jsonStr));
-          onMetadataReceived?.call(endpoint, wrapper);
-        } else if (payload.type == PayloadType.FILE) {
-          // File incoming - tracking will happen via onPayloadTransferUpdate
-          onMetadataReceived?.call(endpoint, PayloadWrapper(
-            type: 'FILE_INCOMING',
-            data: {
-              'payloadId': payload.id, 
-              'tempPath': payload.uri ?? payload.filePath ?? '',
-            },
-          ));
-        }
-      },
-      onPayloadTransferUpdate: (endpoint, update) {
-        onPayloadUpdate?.call(endpoint, update.id, update);
-      },
-    );
+    try {
+      await _nearby.acceptConnection(
+        endpointId,
+        onPayLoadRecieved: (endpoint, payload) {
+          if (payload.type == PayloadType.BYTES) {
+            try {
+              final jsonStr = utf8.decode(payload.bytes!);
+              final wrapper = PayloadWrapper.fromJson(jsonDecode(jsonStr));
+              onMetadataReceived?.call(endpoint, wrapper);
+            } catch (e) {
+              debugPrint('[NearbyService] Error parsing bytes payload: $e');
+            }
+          } else if (payload.type == PayloadType.FILE) {
+            // File incoming - tracking will happen via onPayloadTransferUpdate
+            onMetadataReceived?.call(endpoint, PayloadWrapper(
+              type: 'FILE_INCOMING',
+              data: {
+                'payloadId': payload.id, 
+                'tempPath': payload.uri ?? payload.filePath ?? '',
+              },
+            ));
+          }
+        },
+        onPayloadTransferUpdate: (endpoint, update) {
+          onPayloadUpdate?.call(endpoint, update.id, update);
+        },
+      );
+    } catch (e) {
+      debugPrint('[NearbyService] acceptConnection error: $e');
+    }
   }
 
   Future<void> rejectConnection(String endpointId) async {
-    await _nearby.rejectConnection(endpointId);
+    try {
+      await _nearby.rejectConnection(endpointId);
+    } catch (e) {
+      debugPrint('[NearbyService] rejectConnection error: $e');
+    }
   }
 
   Future<void> sendMetadata(String endpointId, PayloadWrapper wrapper) async {

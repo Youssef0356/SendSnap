@@ -15,6 +15,7 @@ class DeviceProvider with ChangeNotifier {
   String _displayName = 'User';
   bool _isAdvertising = false;
   bool _isDiscovering = false;
+  String? _lastError; // Surface errors to UI
   
   final Map<String, NearbyDevice> _foundDevices = {};
   NearbyDevice? _connectedDevice;
@@ -27,6 +28,7 @@ class DeviceProvider with ChangeNotifier {
   bool get isDiscovering => _isDiscovering;
   List<NearbyDevice> get nearbyDevices => _foundDevices.values.toList();
   NearbyDevice? get connectedDevice => _connectedDevice;
+  String? get lastError => _lastError;
 
   NearbyService get nearbyService => _nearbyService;
 
@@ -49,12 +51,19 @@ class DeviceProvider with ChangeNotifier {
     _nearbyService.onConnectionInitiated = (id, deviceName) async {
       // Auto-accept connection from both sender and receiver sides
       // Nearby Connections requires both endpoints to accept
+      debugPrint('[DeviceProvider] Auto-accepting connection from $deviceName ($id)');
       await _nearbyService.acceptConnection(id);
     };
 
     _nearbyService.onConnectionResult = (id, success) {
+      debugPrint('[DeviceProvider] Connection result: $id -> $success');
       if (success) {
-        _connectedDevice = _foundDevices[id];
+        // Try to find the device by endpoint id, or create a temporary one
+        _connectedDevice = _foundDevices[id] ?? NearbyDevice(
+          endpointId: id,
+          endpointName: 'Device',
+          serviceId: 'com.the356company.sendsnap',
+        );
       } else {
         _connectedDevice = null;
       }
@@ -104,35 +113,69 @@ class DeviceProvider with ChangeNotifier {
     notifyListeners();
   }
 
+  /// Ensure all permissions required for Nearby Connections are granted.
+  /// Returns true if ready, false otherwise (sets _lastError with reason).
+  Future<bool> _ensureNearbyPermissions() async {
+    _lastError = null;
+    
+    // Check if all Nearby Connections permissions are granted
+    if (!await _permissionService.hasNearbyConnectionsPermissions()) {
+      debugPrint('[DeviceProvider] Missing Nearby Connections permissions, requesting...');
+      bool granted = await _permissionService.requestAllPermissions();
+      if (!granted) {
+        _lastError = 'Required permissions were denied. Please enable Location, Bluetooth, and Storage in Settings.';
+        debugPrint('[DeviceProvider] Permission request denied');
+        return false;
+      }
+      // Double-check after requesting
+      if (!await _permissionService.hasNearbyConnectionsPermissions()) {
+        _lastError = 'Location permission is required for device discovery. Please enable it in Settings.';
+        return false;
+      }
+    }
+    
+    // Check if location services are enabled
+    if (!await _permissionService.ensureLocationEnabled()) {
+      _lastError = 'Location services (GPS) must be enabled for device discovery.';
+      debugPrint('[DeviceProvider] Location services disabled');
+      return false;
+    }
+    
+    return true;
+  }
+
   Future<void> toggleAdvertising() async {
     if (_isAdvertising) {
       _isAdvertising = false;
       notifyListeners();
       await _nearbyService.stopAll();
     } else {
+      // Check permissions first BEFORE showing any UI state changes
+      if (!await _ensureNearbyPermissions()) {
+        notifyListeners(); // notify so UI can show _lastError
+        return;
+      }
+
       // Immediate feedback
       _isAdvertising = true;
       _isDiscovering = false;
+      _lastError = null;
       notifyListeners();
 
       // Background work
       try {
         await _nearbyService.stopAll();
-        if (!await _permissionService.hasStoragePermission()) {
-          if (!await _permissionService.requestAllPermissions()) {
-            _isAdvertising = false;
-            notifyListeners();
-            return;
-          }
-        }
         
         bool success = await _nearbyService.startAdvertising(_displayName);
         if (!success) {
           _isAdvertising = false;
+          _lastError = 'Failed to start advertising. Please try again.';
           notifyListeners();
         }
       } catch (e) {
+        debugPrint('[DeviceProvider] Advertising error: $e');
         _isAdvertising = false;
+        _lastError = 'Advertising failed: $e';
         notifyListeners();
       }
     }
@@ -144,30 +187,33 @@ class DeviceProvider with ChangeNotifier {
       notifyListeners();
       await _nearbyService.stopAll();
     } else {
+      // Check permissions first BEFORE showing any UI state changes
+      if (!await _ensureNearbyPermissions()) {
+        notifyListeners(); // notify so UI can show _lastError
+        return;
+      }
+
       // Immediate feedback
       _isDiscovering = true;
       _isAdvertising = false;
       _foundDevices.clear();
+      _lastError = null;
       notifyListeners();
 
       // Background work
       try {
         await _nearbyService.stopAll();
-        if (!await _permissionService.hasStoragePermission()) {
-          if (!await _permissionService.requestAllPermissions()) {
-            _isDiscovering = false;
-            notifyListeners();
-            return;
-          }
-        }
         
         bool success = await _nearbyService.startDiscovery(_displayName);
         if (!success) {
           _isDiscovering = false;
+          _lastError = 'Failed to start discovery. Please try again.';
           notifyListeners();
         }
       } catch (e) {
+        debugPrint('[DeviceProvider] Discovery error: $e');
         _isDiscovering = false;
+        _lastError = 'Discovery failed: $e';
         notifyListeners();
       }
     }
@@ -178,6 +224,12 @@ class DeviceProvider with ChangeNotifier {
     _isAdvertising = false;
     _isDiscovering = false;
     _foundDevices.clear();
+    _lastError = null;
+    notifyListeners();
+  }
+
+  void clearError() {
+    _lastError = null;
     notifyListeners();
   }
 
@@ -194,12 +246,14 @@ class DeviceProvider with ChangeNotifier {
       return false;
     }
 
-    // Wait up to 10 seconds for connection result
+    // Wait up to 15 seconds for connection result (increased from 10)
     try {
-      bool connected = await _connectionCompleter!.future.timeout(const Duration(seconds: 10));
+      bool connected = await _connectionCompleter!.future.timeout(const Duration(seconds: 15));
       return connected;
     } on TimeoutException {
+      debugPrint('[DeviceProvider] Connection timed out for $endpointId');
       _pendingConnectionId = null;
+      _connectionCompleter = null;
       return false;
     }
   }
