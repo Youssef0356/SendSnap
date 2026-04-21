@@ -346,7 +346,11 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _handleSend(BuildContext context, DeviceProvider devProv, TransferProvider transProv) async {
-    FilePickerResult? result = await FilePicker.platform.pickFiles(allowMultiple: false);
+    // requesting any file type to trigger the native platform picker
+    FilePickerResult? result = await FilePicker.platform.pickFiles(
+      allowMultiple: false,
+      type: FileType.any,
+    );
     if (result != null && result.files.single.path != null) {
       setState(() {
         _selectedFile = File(result.files.single.path!);
@@ -369,7 +373,9 @@ class _HomeScreenState extends State<HomeScreen> {
     );
 
     // Request connection and wait for full handshake
+    final scaffoldMessenger = ScaffoldMessenger.of(context);
     bool connected = await devProv.requestConnectionAndWait(target.endpointId);
+    
     if (connected) {
        await transProv.sendFile(target.endpointId, _selectedFile!, devProv.nearbyService);
        if (mounted) {
@@ -380,7 +386,7 @@ class _HomeScreenState extends State<HomeScreen> {
        });
     } else {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
+        scaffoldMessenger.showSnackBar(
           const SnackBar(
             content: Text('Failed to connect to device. Make sure the other device is in Receive mode.'),
             backgroundColor: AppColors.error,

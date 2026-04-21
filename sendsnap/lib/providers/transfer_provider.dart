@@ -62,20 +62,20 @@ class TransferProvider with ChangeNotifier {
       debugPrint('[TransferProvider] Transfer SUCCESS for payloadId: $payloadId');
       
       // If receiving, move the file from temp to downloads
+      String? savedPath;
       if (_payloadToTempPath.containsKey(payloadId)) {
         final tempPath = _payloadToTempPath[payloadId]!;
         try {
-          final cleanPath = tempPath.replaceFirst('file://', '');
-          debugPrint('[TransferProvider] Moving file from: $cleanPath to downloads as: ${transfer.fileName}');
-          if (cleanPath.isNotEmpty && await File(cleanPath).exists()) {
-            await FileHandler.moveFileToDownloads(cleanPath, transfer.fileName);
-            debugPrint('[TransferProvider] File moved successfully');
+          debugPrint('[TransferProvider] Moving file from: $tempPath to downloads as: ${transfer.fileName}');
+          final savedFile = await FileHandler.moveFileToDownloads(tempPath, transfer.fileName);
+          if (savedFile != null) {
+            savedPath = savedFile.path;
+            debugPrint('[TransferProvider] File moved successfully to: $savedPath');
           } else {
-            debugPrint('[TransferProvider] WARNING: Temp file not found at: $cleanPath');
+            debugPrint('[TransferProvider] WARNING: File move failed for: $tempPath');
           }
         } catch (e) {
           debugPrint('[TransferProvider] Error moving file to downloads: $e');
-          // Don't block the status update — file might still be accessible
         }
         _payloadToTempPath.remove(payloadId);
       }
@@ -83,6 +83,7 @@ class TransferProvider with ChangeNotifier {
       transfer = transfer.copyWith(
          transferredBytes: transfer.fileSize,
          status: TransferStatus.completed,
+         savedPath: savedPath,
       );
       _transfers[index] = transfer;
       

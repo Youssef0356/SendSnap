@@ -147,6 +147,7 @@ class TransferScreen extends StatelessWidget {
   }
 
   Widget _buildCompletedActions(BuildContext context, TransferProvider transProv) {
+    final current = transProv.currentTransfer;
     return Column(
       children: [
         const Icon(Icons.celebration_rounded, color: AppColors.warning, size: 48),
@@ -157,16 +158,35 @@ class TransferScreen extends StatelessWidget {
           textAlign: TextAlign.center,
         ),
         const SizedBox(height: 24),
-        ElevatedButton(
+        if (current?.savedPath != null)
+          Padding(
+            padding: const EdgeInsets.only(bottom: AppSpacing.m),
+            child: ElevatedButton.icon(
+              onPressed: () => FileHandler.openFile(current!.savedPath!),
+              icon: const Icon(Icons.open_in_new_rounded, color: Colors.white),
+              label: const Text('OPEN FILE', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+              style: ElevatedButton.styleFrom(
+                minimumSize: const Size(240, 56),
+                backgroundColor: AppColors.primary,
+              ),
+            ),
+          ),
+        ElevatedButton.icon(
+          onPressed: () => FileHandler.browseDownloadsFolder(),
+          icon: const Icon(Icons.folder_open_rounded, color: Colors.white),
+          label: const Text('BROWSE FOLDER', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+          style: ElevatedButton.styleFrom(
+            minimumSize: const Size(240, 56),
+            backgroundColor: AppColors.textSecondary,
+          ),
+        ),
+        const SizedBox(height: AppSpacing.m),
+        TextButton(
           onPressed: () {
             transProv.dismissActiveTransfer();
             Navigator.pop(context);
           },
-          style: ElevatedButton.styleFrom(
-            minimumSize: const Size(200, 56),
-            backgroundColor: AppColors.success,
-          ),
-          child: const Text('DONE', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+          child: const Text('DONE', style: TextStyle(fontWeight: FontWeight.bold)),
         ),
       ],
     );

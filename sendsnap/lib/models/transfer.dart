@@ -8,6 +8,7 @@ class FileTransfer {
   final TransferStatus status;
   final String? errorMessage;
   final DateTime createdAt;
+  final String? savedPath; // Local path after file is saved (receiver side)
 
   FileTransfer({
     required this.id,
@@ -17,6 +18,7 @@ class FileTransfer {
     this.status = TransferStatus.pending,
     this.errorMessage,
     DateTime? createdAt,
+    this.savedPath,
   }) : createdAt = createdAt ?? DateTime.now();
 
   double get progress => fileSize == 0 ? 0 : transferredBytes / fileSize;
@@ -29,6 +31,7 @@ class FileTransfer {
     TransferStatus? status,
     String? errorMessage,
     DateTime? createdAt,
+    String? savedPath,
   }) {
     return FileTransfer(
       id: id ?? this.id,
@@ -38,6 +41,7 @@ class FileTransfer {
       status: status ?? this.status,
       errorMessage: errorMessage ?? this.errorMessage,
       createdAt: createdAt ?? this.createdAt,
+      savedPath: savedPath ?? this.savedPath,
     );
   }
 
@@ -49,6 +53,7 @@ class FileTransfer {
     'status': status.index,
     'errorMessage': errorMessage,
     'createdAt': createdAt.toIso8601String(),
+    'savedPath': savedPath,
   };
 
   factory FileTransfer.fromJson(Map<String, dynamic> json) => FileTransfer(
@@ -59,5 +64,6 @@ class FileTransfer {
     status: TransferStatus.values[json['status']],
     errorMessage: json['errorMessage'],
     createdAt: DateTime.parse(json['createdAt']),
+    savedPath: json['savedPath'],
   );
 }
