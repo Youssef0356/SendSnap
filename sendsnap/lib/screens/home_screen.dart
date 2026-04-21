@@ -35,15 +35,16 @@ class _HomeScreenState extends State<HomeScreen> {
         child: Column(
           children: [
             Expanded(
-              child: Padding(
+              child: SingleChildScrollView(
                 padding: const EdgeInsets.all(AppSpacing.l),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     _buildHeader(context, devProv),
-                    const SizedBox(height: AppSpacing.xl),
+                    const SizedBox(height: AppSpacing.xxl),
                     
-                    Expanded(
+                    SizedBox(
+                      height: 420,
                       child: Stack(
                         children: [
                           // READY STATE (Buttons)
@@ -80,34 +81,31 @@ class _HomeScreenState extends State<HomeScreen> {
                           ),
 
                           // BUSY STATE (Radar + Discovery)
-                          // Use Positioned.fill instead of Expanded (Expanded is invalid inside Stack)
                           if (isBusy)
                             Positioned.fill(
-                              child: SingleChildScrollView(
-                                child: Column(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  children: [
-                                    RadarWidget(
-                                      active: true,
-                                      label: devProv.isAdvertising ? 'Waiting for sender...' : 'Searching for devices...',
-                                    ),
-                                    if (devProv.isDiscovering && devProv.nearbyDevices.isNotEmpty)
-                                      _buildDeviceDiscovery(context, devProv, transProv),
+                              child: Column(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  RadarWidget(
+                                    active: true,
+                                    label: devProv.isAdvertising ? 'Waiting for sender...' : 'Searching for devices...',
+                                  ),
+                                  if (devProv.isDiscovering && devProv.nearbyDevices.isNotEmpty)
+                                    _buildDeviceDiscovery(context, devProv, transProv),
 
-                                    const SizedBox(height: AppSpacing.l),
-                                    Center(
-                                      child: TextButton.icon(
-                                        onPressed: () {
-                                          devProv.stopAll();
-                                          _selectedFile = null;
-                                        },
-                                        icon: const Icon(Icons.close),
-                                        label: const Text('Cancel'),
-                                        style: TextButton.styleFrom(foregroundColor: AppColors.error),
-                                      ),
+                                  const SizedBox(height: AppSpacing.l),
+                                  Center(
+                                    child: TextButton.icon(
+                                      onPressed: () {
+                                        devProv.stopAll();
+                                        _selectedFile = null;
+                                      },
+                                      icon: const Icon(Icons.close),
+                                      label: const Text('Cancel'),
+                                      style: TextButton.styleFrom(foregroundColor: AppColors.error),
                                     ),
-                                  ],
-                                ),
+                                  ),
+                                ],
                               ),
                             ),
                         ],
@@ -155,21 +153,26 @@ class _HomeScreenState extends State<HomeScreen> {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-        Row(
-          children: [
-            Image.asset('assets/icon/app_icon.png', height: 40),
-            const SizedBox(width: 12),
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('SendSnap', style: Theme.of(context).textTheme.titleLarge?.copyWith(fontSize: 24, fontWeight: FontWeight.bold)),
-                Text(
-                  devProv.displayName,
-                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: AppColors.primary, fontWeight: FontWeight.bold),
+        Expanded(
+          child: Row(
+            children: [
+              Image.asset('assets/icon/app_icon.png', height: 40),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('SendSnap', style: Theme.of(context).textTheme.titleLarge?.copyWith(fontSize: 24, fontWeight: FontWeight.bold)),
+                    Text(
+                      devProv.displayName,
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: AppColors.primary, fontWeight: FontWeight.bold),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
                 ),
-              ],
-            ),
-          ],
+              ),
+            ],
+          ),
         ),
         IconButton(
           onPressed: () => Navigator.pushNamed(context, '/settings'),
@@ -216,25 +219,29 @@ class _HomeScreenState extends State<HomeScreen> {
               child: Icon(icon, color: isActive ? Colors.white : color, size: 32),
             ),
             const SizedBox(width: AppSpacing.m),
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  isActive ? (activeText ?? title) : title,
-                  style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                    color: isActive ? Colors.white : color,
-                    letterSpacing: 1.2,
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    isActive ? (activeText ?? title) : title,
+                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                      color: isActive ? Colors.white : color,
+                      letterSpacing: 1.2,
+                    ),
+                    overflow: TextOverflow.ellipsis,
                   ),
-                ),
-                Text(
-                  isActive ? 'Tap to stop' : subtitle,
-                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: isActive ? Colors.white.withOpacity(0.8) : color.withOpacity(0.7),
+                  Text(
+                    isActive ? 'Tap to stop' : subtitle,
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      color: isActive ? Colors.white.withOpacity(0.8) : color.withOpacity(0.7),
+                    ),
+                    overflow: TextOverflow.ellipsis,
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
-            const Spacer(),
+            const SizedBox(width: 8),
             Icon(
               isActive ? Icons.close : Icons.chevron_right_rounded,
               color: isActive ? Colors.white : color,
@@ -299,6 +306,7 @@ class _HomeScreenState extends State<HomeScreen> {
             Text(
               device.endpointName,
               style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.bold),
+              maxLines: 1,
               overflow: TextOverflow.ellipsis,
               textAlign: TextAlign.center,
             ),
@@ -308,69 +316,21 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget? _buildBottomTransferStatus(BuildContext context, TransferProvider transProv) {
-    if (transProv.activeTransfer == null) return null;
-
-    final t = transProv.activeTransfer!;
-    return GestureDetector(
-      onTap: () => Navigator.pushNamed(context, '/transfer'),
-      child: Container(
-        height: 56,
-        margin: const EdgeInsets.symmetric(horizontal: AppSpacing.m, vertical: AppSpacing.s),
-        padding: const EdgeInsets.symmetric(horizontal: AppSpacing.m),
-        decoration: BoxDecoration(
-          color: AppColors.primary,
-          borderRadius: BorderRadius.circular(16),
-        ),
-        child: Row(
-          children: [
-            const Icon(Icons.sync_rounded, color: Colors.white, size: 20),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text('Sending ${t.fileName}', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12), overflow: TextOverflow.ellipsis, maxLines: 1),
-                  const SizedBox(height: 4),
-                  LinearProgressIndicator(value: t.progress, backgroundColor: Colors.white24, color: Colors.white, minHeight: 3),
-                ],
-              ),
-            ),
-            const SizedBox(width: 12),
-            Text('${(t.progress * 100).toInt()}%', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12)),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Future<void> _handleSend(BuildContext context, DeviceProvider devProv, TransferProvider transProv) async {
-    // requesting any file type to trigger the native platform picker
-    FilePickerResult? result = await FilePicker.platform.pickFiles(
-      allowMultiple: false,
-      type: FileType.any,
-    );
-    if (result != null && result.files.single.path != null) {
+  void _handleSend(BuildContext context, DeviceProvider devProv, TransferProvider transProv) async {
+    final result = await FilePicker.platform.pickFiles(type: FileType.any);
+    if (result != null) {
+      final file = File(result.files.single.path!);
       setState(() {
-        _selectedFile = File(result.files.single.path!);
+        _selectedFile = file;
       });
-      
-      // Auto-start discovery
-      await devProv.toggleDiscovery();
+      devProv.toggleDiscovery();
     }
   }
 
-  Future<void> _initiateTransfer(BuildContext context, NearbyDevice target, DeviceProvider devProv, TransferProvider transProv) async {
+  void _initiateTransfer(BuildContext context, NearbyDevice target, DeviceProvider devProv, TransferProvider transProv) async {
     if (_selectedFile == null) return;
-
-    // Show a connecting indicator
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Connecting to device...'),
-        duration: Duration(seconds: 2),
-      ),
-    );
+    
+    _showConnectingSheet(context, target.endpointName);
 
     // Request connection and wait for full handshake
     final scaffoldMessenger = ScaffoldMessenger.of(context);
@@ -394,5 +354,64 @@ class _HomeScreenState extends State<HomeScreen> {
         );
       }
     }
+  }
+
+  void _showConnectingSheet(BuildContext context, String deviceName) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(32))),
+      builder: (context) => Container(
+        padding: const EdgeInsets.all(AppSpacing.xl),
+        height: 250,
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const CircularProgressIndicator(),
+            const SizedBox(height: AppSpacing.xl),
+            Text('Connecting to $deviceName...', style: Theme.of(context).textTheme.titleLarge),
+            const SizedBox(height: AppSpacing.m),
+            const Text('Keep both devices nearby', style: TextStyle(color: AppColors.textSecondary)),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildBottomTransferStatus(BuildContext context, TransferProvider transProv) {
+    if (transProv.activeTransfer == null) return const SizedBox.shrink();
+    
+    final transfer = transProv.activeTransfer!;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.l, vertical: AppSpacing.m),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        boxShadow: [
+          BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10, offset: const Offset(0, -5)),
+        ],
+      ),
+      child: SafeArea(
+        child: Row(
+          children: [
+            Expanded(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(transfer.fileName, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 4),
+                  LinearProgressIndicator(value: transfer.progress, backgroundColor: AppColors.primary.withOpacity(0.1)),
+                ],
+              ),
+            ),
+            const SizedBox(width: AppSpacing.l),
+            IconButton(
+              onPressed: () => Navigator.pushNamed(context, '/transfer'),
+              icon: const Icon(Icons.open_in_new_rounded, color: AppColors.primary),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }

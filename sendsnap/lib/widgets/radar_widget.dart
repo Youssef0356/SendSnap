@@ -47,12 +47,12 @@ class _RadarWidgetState extends State<RadarWidget> with SingleTickerProviderStat
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      height: 380, // Fixed height to prevent vertical shifts
+      height: 300, // Reduced from 380
       child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
+        mainAxisSize: MainAxisSize.min,
         children: [
           SizedBox(
-            height: 280, // Space for the 3 rings
+            height: 240, // Reduced from 280
             child: Stack(
               alignment: Alignment.center,
               children: [
@@ -69,8 +69,8 @@ class _RadarWidgetState extends State<RadarWidget> with SingleTickerProviderStat
                       if (progress == 0) return const SizedBox.shrink();
 
                       return Container(
-                        width: 80 + (progress * 180),
-                        height: 80 + (progress * 180),
+                        width: 80 + (progress * 140), // Reduced from 180
+                        height: 80 + (progress * 140), // Reduced from 180
                         decoration: BoxDecoration(
                           shape: BoxShape.circle,
                           border: Border.all(

@@ -42,7 +42,7 @@ class TransferScreen extends StatelessWidget {
         ),
         centerTitle: true,
       ),
-      body: Center(
+      body: SingleChildScrollView(
         child: Padding(
           padding: const EdgeInsets.all(AppSpacing.xl),
           child: Column(
@@ -54,6 +54,8 @@ class TransferScreen extends StatelessWidget {
                 current.fileName,
                 style: Theme.of(context).textTheme.titleLarge,
                 textAlign: TextAlign.center,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
               ),
               const SizedBox(height: AppSpacing.s),
               Text(
@@ -127,6 +129,7 @@ class TransferScreen extends StatelessWidget {
           ),
         ),
         Column(
+          mainAxisSize: MainAxisSize.min,
           children: [
             Icon(
               isCompleted ? Icons.check_circle_rounded 
