@@ -31,7 +31,7 @@ android {
     defaultConfig {
         applicationId = "com.the356company.sendsnap"
         minSdk = 24
-        targetSdk = 36
+        targetSdk = 35
         versionCode = flutter.versionCode
         versionName = flutter.versionName
     }
@@ -47,10 +47,12 @@ android {
 
     buildTypes {
         release {
-            // Only use release signing if the storeFile is configured and exists
+            // Use release signing if configured, otherwise fallback to debug keystore so the APK is validly signed
             val releaseConfig = signingConfigs.getByName("release")
             if (releaseConfig.storeFile != null && releaseConfig.storeFile!!.exists()) {
                 signingConfig = releaseConfig
+            } else {
+                signingConfig = signingConfigs.getByName("debug")
             }
         }
     }

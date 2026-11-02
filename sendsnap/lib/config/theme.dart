@@ -9,7 +9,6 @@ class AppTheme {
       brightness: Brightness.light,
       colorScheme: ColorScheme.fromSeed(
         seedColor: AppColors.primary,
-        background: AppColors.background,
         surface: AppColors.surface,
         primary: AppColors.primary,
         secondary: AppColors.secondary,
@@ -40,7 +39,7 @@ class AppTheme {
         elevation: 0,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(24),
-          side: BorderSide(color: Colors.grey.withOpacity(0.08)),
+          side: BorderSide(color: Colors.grey.withValues(alpha: 0.08)),
         ),
       ),
       elevatedButtonTheme: ElevatedButtonThemeData(

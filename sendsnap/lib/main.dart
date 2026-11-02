@@ -7,15 +7,18 @@ import 'screens/splash_screen.dart';
 import 'screens/home_screen.dart';
 import 'screens/transfer_screen.dart';
 import 'screens/settings_screen.dart';
+import 'screens/received_files_screen.dart';
 import 'config/theme.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
   
-  // Lock orientation to portrait for a better UI experience
+  // Support portrait and landscape across phones, tablets, and foldables
   SystemChrome.setPreferredOrientations([
     DeviceOrientation.portraitUp,
     DeviceOrientation.portraitDown,
+    DeviceOrientation.landscapeLeft,
+    DeviceOrientation.landscapeRight,
   ]);
 
   // Set status bar style
@@ -61,6 +64,7 @@ class _SendSnapAppState extends State<SendSnapApp> {
         '/home': (context) => const HomeScreen(),
         '/transfer': (context) => const TransferScreen(),
         '/settings': (context) => const SettingsScreen(),
+        '/received_files': (context) => const ReceivedFilesScreen(),
       },
       // Wire up the payload callbacks between providers ONCE
       builder: (context, child) {
@@ -77,12 +81,31 @@ class _SendSnapAppState extends State<SendSnapApp> {
 
   void _setupSynchronization(DeviceProvider devProv, TransferProvider transProv) {
     // Wire up nearby service callbacks to transfer provider
-    devProv.nearbyService.onMetadataReceived = (endpoint, wrapper) {
-      transProv.handleIncomingMetadata(endpoint, wrapper, devProv.nearbyService);
+    devProv.nearbyService.onIncomingTransfer = (sender, transfer) {
+      transProv.handleIncomingTransfer(sender, transfer);
     };
     
-    devProv.nearbyService.onPayloadUpdate = (endpoint, payloadId, update) {
-      transProv.updateTransferProgress(payloadId, update);
+    devProv.nearbyService.onTransferProgress = (transferId, bytesTransferred, totalBytes, speed) {
+      transProv.updateTransferProgress(
+        transferId: transferId,
+        bytesTransferred: bytesTransferred,
+        totalBytes: totalBytes,
+        speed: speed,
+      );
+    };
+
+    devProv.nearbyService.onTransferCompleted = (transferId, savedPath) {
+      transProv.markTransferCompleted(
+        transferId: transferId,
+        savedPath: savedPath,
+      );
+    };
+
+    devProv.nearbyService.onTransferFailed = (transferId, error) {
+      transProv.markTransferFailed(
+        transferId: transferId,
+        error: error,
+      );
     };
 
     // Auto-navigate receiver to transfer screen when an incoming transfer starts
@@ -93,7 +116,6 @@ class _SendSnapAppState extends State<SendSnapApp> {
       });
     };
 
-    // Optional: could show a notification when transfer completes
     transProv.onTransferCompleted = () {
       debugPrint('[SendSnapApp] Transfer completed!');
     };

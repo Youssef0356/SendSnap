@@ -1,45 +1,55 @@
 import 'dart:io';
 import 'package:flutter/foundation.dart';
-import 'package:flutter/services.dart';
-import 'package:path_provider/path_provider.dart';
+import 'package:path_provider/path_provider.dart' as path_provider;
 import 'package:path/path.dart' as p;
+import 'package:open_filex/open_filex.dart';
 
 class FileHandler {
-  static const _channel = MethodChannel('com.the356company.sendsnap/file_utils');
-
+  /// Gets a safe directory to store downloaded files.
   static Future<Directory> getDownloadsDirectory() async {
-    if (Platform.isAndroid) {
-      final dir = Directory('/storage/emulated/0/Download/SendSnap');
-      if (!await dir.exists()) await dir.create(recursive: true);
-      return dir;
-    } else {
-      final appDocDir = await getApplicationDocumentsDirectory();
-      final dir = Directory(p.join(appDocDir.path, 'SendSnap'));
-      if (!await dir.exists()) await dir.create(recursive: true);
-      return dir;
+    Directory? baseDir;
+    try {
+      baseDir = await getDownloadsDirectoryPlatform();
+    } catch (e) {
+      debugPrint('[FileHandler] Error getting platform downloads dir: $e');
     }
+
+    if (baseDir == null) {
+      try {
+        baseDir = await path_provider.getApplicationDocumentsDirectory();
+      } catch (_) {
+        baseDir = Directory(p.join(Directory.systemTemp.path, 'SendSnapDownloads'));
+      }
+    }
+
+    final dir = Directory(p.join(baseDir.path, 'SendSnap'));
+    if (!await dir.exists()) {
+      await dir.create(recursive: true);
+    }
+    return dir;
   }
 
-  /// Copies a file from a content:// URI to a destination path using native code.
-  static Future<String?> copyFromContentUri(String contentUri, String destPath) async {
+  static Future<Directory?> getDownloadsDirectoryPlatform() async {
+    if (Platform.isAndroid) {
+      final publicDownload = Directory('/storage/emulated/0/Download');
+      if (await publicDownload.exists()) {
+        return publicDownload;
+      }
+      try {
+        final extDir = await path_provider.getExternalStorageDirectory();
+        if (extDir != null) return extDir;
+      } catch (_) {}
+    }
     try {
-      final result = await _channel.invokeMethod<String>('copyFromContentUri', {
-        'uri': contentUri,
-        'destPath': destPath,
-      });
-      debugPrint('[FileHandler] Copied from content URI to: $result');
-      return result;
-    } catch (e) {
-      debugPrint('[FileHandler] Error copying from content URI: $e');
+      return await path_provider.getDownloadsDirectory();
+    } catch (_) {
       return null;
     }
   }
 
-  /// Moves a received file to Downloads/SendSnap.
-  /// Handles both regular file paths and content:// URIs.
-  static Future<File?> moveFileToDownloads(String sourcePath, String fileName) async {
+  /// Generates a unique destination path in the SendSnap downloads folder.
+  static Future<String> getAvailableDestinationPath(String fileName) async {
     final destDir = await getDownloadsDirectory();
-    // Avoid overwriting existing files by appending a counter
     String destPath = p.join(destDir.path, fileName);
     int counter = 1;
     while (await File(destPath).exists()) {
@@ -48,29 +58,28 @@ class FileHandler {
       destPath = p.join(destDir.path, '${base}_$counter$ext');
       counter++;
     }
+    return destPath;
+  }
 
-    // Check if it's a content:// URI (from Nearby Connections on Android 11+)
-    if (sourcePath.startsWith('content://')) {
-      debugPrint('[FileHandler] Source is content URI, using native copy');
-      final copiedPath = await copyFromContentUri(sourcePath, destPath);
-      if (copiedPath != null) {
-        return File(copiedPath);
+  /// Moves or copies a temp file to downloads.
+  static Future<File?> moveFileToDownloads(String sourcePath, String fileName) async {
+    try {
+      final destPath = await getAvailableDestinationPath(fileName);
+      final sourceFile = File(sourcePath);
+      if (!await sourceFile.exists()) {
+        debugPrint('[FileHandler] Source file does not exist: $sourcePath');
+        return null;
       }
-      debugPrint('[FileHandler] Native copy failed');
-      return null;
-    }
 
-    // Regular file path
-    final sourceFile = File(sourcePath);
-    if (!await sourceFile.exists()) {
-      debugPrint('[FileHandler] Source file does not exist: $sourcePath');
+      final destFile = await sourceFile.copy(destPath);
+      try {
+        await sourceFile.delete();
+      } catch (_) {}
+      return destFile;
+    } catch (e) {
+      debugPrint('[FileHandler] moveFileToDownloads error: $e');
       return null;
     }
-    
-    // Copy then delete is safer than rename across partitions
-    final destFile = await sourceFile.copy(destPath);
-    try { await sourceFile.delete(); } catch (_) {}
-    return destFile;
   }
 
   static String formatFileSize(int bytes) {
@@ -80,24 +89,26 @@ class FileHandler {
     return '${(bytes / (1024 * 1024 * 1024)).toStringAsFixed(1)} GB';
   }
 
-  /// Opens a file using the system's default app via native intent with proper MIME type.
-  static Future<void> openFile(String path) async {
+  /// Opens a file using the system default application via OpenFilex.
+  static Future<bool> openFile(String path) async {
     try {
-      final result = await _channel.invokeMethod<bool>('openFile', {'path': path});
-      debugPrint('[FileHandler] Open file result: $result');
+      final result = await OpenFilex.open(path);
+      return result.type == ResultType.done;
     } catch (e) {
-      debugPrint('[FileHandler] Error opening file: $e');
+      debugPrint('[FileHandler] Error opening file with OpenFilex: $e');
+      return false;
     }
   }
 
   /// Opens the system file manager at the SendSnap downloads folder.
-  static Future<void> browseDownloadsFolder() async {
+  static Future<bool> browseDownloadsFolder() async {
     try {
       final dir = await getDownloadsDirectory();
-      final result = await _channel.invokeMethod<bool>('openFileManager', {'path': dir.path});
-      debugPrint('[FileHandler] Browse folder result: $result');
+      final result = await OpenFilex.open(dir.path);
+      return result.type == ResultType.done;
     } catch (e) {
-      debugPrint('[FileHandler] Error browsing folder: $e');
+      debugPrint('[FileHandler] Error opening downloads folder: $e');
+      return false;
     }
   }
 }

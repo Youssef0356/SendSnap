@@ -8,7 +8,9 @@ class FileTransfer {
   final TransferStatus status;
   final String? errorMessage;
   final DateTime createdAt;
-  final String? savedPath; // Local path after file is saved (receiver side)
+  final String? savedPath; // Receiver side
+  final String? filePath;  // Sender side
+  final double speed;      // bytes per second
 
   FileTransfer({
     required this.id,
@@ -19,9 +21,17 @@ class FileTransfer {
     this.errorMessage,
     DateTime? createdAt,
     this.savedPath,
+    this.filePath,
+    this.speed = 0.0,
   }) : createdAt = createdAt ?? DateTime.now();
 
-  double get progress => fileSize == 0 ? 0 : transferredBytes / fileSize;
+  double get progress => fileSize == 0 ? 0 : (transferredBytes / fileSize).clamp(0.0, 1.0);
+
+  String get formattedSpeed {
+    if (speed < 1024) return '${speed.toStringAsFixed(0)} B/s';
+    if (speed < 1024 * 1024) return '${(speed / 1024).toStringAsFixed(1)} KB/s';
+    return '${(speed / (1024 * 1024)).toStringAsFixed(1)} MB/s';
+  }
 
   FileTransfer copyWith({
     String? id,
@@ -32,6 +42,8 @@ class FileTransfer {
     String? errorMessage,
     DateTime? createdAt,
     String? savedPath,
+    String? filePath,
+    double? speed,
   }) {
     return FileTransfer(
       id: id ?? this.id,
@@ -42,6 +54,8 @@ class FileTransfer {
       errorMessage: errorMessage ?? this.errorMessage,
       createdAt: createdAt ?? this.createdAt,
       savedPath: savedPath ?? this.savedPath,
+      filePath: filePath ?? this.filePath,
+      speed: speed ?? this.speed,
     );
   }
 
@@ -54,16 +68,20 @@ class FileTransfer {
     'errorMessage': errorMessage,
     'createdAt': createdAt.toIso8601String(),
     'savedPath': savedPath,
+    'filePath': filePath,
+    'speed': speed,
   };
 
   factory FileTransfer.fromJson(Map<String, dynamic> json) => FileTransfer(
-    id: json['id'],
-    fileName: json['fileName'],
-    fileSize: json['fileSize'],
-    transferredBytes: json['transferredBytes'],
-    status: TransferStatus.values[json['status']],
-    errorMessage: json['errorMessage'],
-    createdAt: DateTime.parse(json['createdAt']),
-    savedPath: json['savedPath'],
+    id: json['id'] as String,
+    fileName: json['fileName'] as String,
+    fileSize: json['fileSize'] as int,
+    transferredBytes: json['transferredBytes'] as int? ?? 0,
+    status: TransferStatus.values[json['status'] as int],
+    errorMessage: json['errorMessage'] as String?,
+    createdAt: DateTime.parse(json['createdAt'] as String),
+    savedPath: json['savedPath'] as String?,
+    filePath: json['filePath'] as String?,
+    speed: (json['speed'] as num?)?.toDouble() ?? 0.0,
   );
 }

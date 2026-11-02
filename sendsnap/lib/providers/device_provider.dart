@@ -7,22 +7,23 @@ import 'dart:async';
 import '../models/device.dart';
 import '../services/nearby_service.dart';
 import '../services/permission_service.dart';
+import '../services/network_info_service.dart';
 
 class DeviceProvider with ChangeNotifier {
   final NearbyService _nearbyService = NearbyService();
   final PermissionService _permissionService = PermissionService();
   
   String _displayName = 'User';
+  String? _localIp;
   bool _isAdvertising = false;
   bool _isDiscovering = false;
-  String? _lastError; // Surface errors to UI
+  String? _lastError;
   
   final Map<String, NearbyDevice> _foundDevices = {};
   NearbyDevice? _connectedDevice;
-  Completer<bool>? _connectionCompleter;
-  String? _pendingConnectionId;
   
   String get displayName => _displayName;
+  String? get localIp => _localIp;
   bool get isAdvertising => _isAdvertising;
   bool get getIsDiscovering => _isDiscovering;
   bool get isDiscovering => _isDiscovering;
@@ -34,12 +35,18 @@ class DeviceProvider with ChangeNotifier {
 
   DeviceProvider() {
     _loadDisplayName();
+    _refreshLocalIp();
     _setupNearbyCallbacks();
+  }
+
+  Future<void> _refreshLocalIp() async {
+    _localIp = await NetworkInfoService.getLocalIpAddress();
+    notifyListeners();
   }
 
   void _setupNearbyCallbacks() {
     _nearbyService.onDeviceFound = (device) {
-      _foundDevices[device.endpointId] = device;
+      _foundDevices[device.id] = device;
       notifyListeners();
     };
 
@@ -49,35 +56,26 @@ class DeviceProvider with ChangeNotifier {
     };
 
     _nearbyService.onConnectionInitiated = (id, deviceName) async {
-      // Auto-accept connection from both sender and receiver sides
-      // Nearby Connections requires both endpoints to accept
-      debugPrint('[DeviceProvider] Auto-accepting connection from $deviceName ($id)');
-      await _nearbyService.acceptConnection(id);
+      debugPrint('[DeviceProvider] Handshake initiated with $deviceName ($id)');
     };
 
     _nearbyService.onConnectionResult = (id, success) {
       debugPrint('[DeviceProvider] Connection result: $id -> $success');
       if (success) {
-        // Try to find the device by endpoint id, or create a temporary one
         _connectedDevice = _foundDevices[id] ?? NearbyDevice(
-          endpointId: id,
-          endpointName: 'Device',
-          serviceId: 'com.the356company.sendsnap',
+          id: id,
+          name: 'Device',
+          ip: '',
+          port: 53318,
         );
       } else {
         _connectedDevice = null;
-      }
-      // Complete the pending connection future if waiting
-      if (_pendingConnectionId == id && _connectionCompleter != null) {
-        _connectionCompleter!.complete(success);
-        _connectionCompleter = null;
-        _pendingConnectionId = null;
       }
       notifyListeners();
     };
 
     _nearbyService.onDisconnected = (id) {
-      if (_connectedDevice?.endpointId == id) {
+      if (_connectedDevice?.id == id) {
         _connectedDevice = null;
       }
       notifyListeners();
@@ -90,13 +88,18 @@ class DeviceProvider with ChangeNotifier {
     if (saved != null && saved.isNotEmpty) {
       _displayName = saved;
     } else {
-      // Default to device model
       try {
         if (Platform.isAndroid) {
           final info = await DeviceInfoPlugin().androidInfo;
           _displayName = '${info.brand} ${info.model}';
+        } else if (Platform.isIOS) {
+          final info = await DeviceInfoPlugin().iosInfo;
+          _displayName = info.name;
+        } else if (Platform.isWindows) {
+          final info = await DeviceInfoPlugin().windowsInfo;
+          _displayName = info.computerName;
         } else {
-          _displayName = 'Generic Device';
+          _displayName = 'Device ${Random().nextInt(999)}';
         }
       } catch (_) {
         _displayName = 'User ${Random().nextInt(999)}';
@@ -113,34 +116,15 @@ class DeviceProvider with ChangeNotifier {
     notifyListeners();
   }
 
-  /// Ensure all permissions required for Nearby Connections are granted.
-  /// Returns true if ready, false otherwise (sets _lastError with reason).
-  Future<bool> _ensureNearbyPermissions() async {
+  Future<bool> _ensureNetworkReady() async {
     _lastError = null;
-    
-    // Check if all Nearby Connections permissions are granted
-    if (!await _permissionService.hasNearbyConnectionsPermissions()) {
-      debugPrint('[DeviceProvider] Missing Nearby Connections permissions, requesting...');
-      bool granted = await _permissionService.requestAllPermissions();
-      if (!granted) {
-        _lastError = 'Required permissions were denied. Please enable Location, Bluetooth, and Storage in Settings.';
-        debugPrint('[DeviceProvider] Permission request denied');
-        return false;
-      }
-      // Double-check after requesting
-      if (!await _permissionService.hasNearbyConnectionsPermissions()) {
-        _lastError = 'Location permission is required for device discovery. Please enable it in Settings.';
-        return false;
-      }
-    }
-    
-    // Check if location services are enabled
-    if (!await _permissionService.ensureLocationEnabled()) {
-      _lastError = 'Location services (GPS) must be enabled for device discovery.';
-      debugPrint('[DeviceProvider] Location services disabled');
+    await _refreshLocalIp();
+
+    if (_localIp == null || _localIp!.isEmpty) {
+      _lastError = 'No Wi-Fi or hotspot connection found. Please connect both devices to the same Wi-Fi network or enable a Personal Hotspot.';
+      debugPrint('[DeviceProvider] No local IP found');
       return false;
     }
-    
     return true;
   }
 
@@ -150,32 +134,28 @@ class DeviceProvider with ChangeNotifier {
       notifyListeners();
       await _nearbyService.stopAll();
     } else {
-      // Check permissions first BEFORE showing any UI state changes
-      if (!await _ensureNearbyPermissions()) {
-        notifyListeners(); // notify so UI can show _lastError
+      if (!await _ensureNetworkReady()) {
+        notifyListeners();
         return;
       }
 
-      // Immediate feedback
       _isAdvertising = true;
       _isDiscovering = false;
       _lastError = null;
       notifyListeners();
 
-      // Background work
       try {
         await _nearbyService.stopAll();
-        
         bool success = await _nearbyService.startAdvertising(_displayName);
         if (!success) {
           _isAdvertising = false;
-          _lastError = 'Failed to start advertising. Please try again.';
+          _lastError = 'Failed to start receiver service. Please check network permissions.';
           notifyListeners();
         }
       } catch (e) {
         debugPrint('[DeviceProvider] Advertising error: $e');
         _isAdvertising = false;
-        _lastError = 'Advertising failed: $e';
+        _lastError = 'Receiver failed: $e';
         notifyListeners();
       }
     }
@@ -187,23 +167,22 @@ class DeviceProvider with ChangeNotifier {
       notifyListeners();
       await _nearbyService.stopAll();
     } else {
-      // Check permissions first BEFORE showing any UI state changes
-      if (!await _ensureNearbyPermissions()) {
-        notifyListeners(); // notify so UI can show _lastError
+      if (!await _ensureNetworkReady()) {
+        notifyListeners();
         return;
       }
 
-      // Immediate feedback
+      // Check storage permission for sending files
+      await _permissionService.requestAllPermissions();
+
       _isDiscovering = true;
       _isAdvertising = false;
       _foundDevices.clear();
       _lastError = null;
       notifyListeners();
 
-      // Background work
       try {
         await _nearbyService.stopAll();
-        
         bool success = await _nearbyService.startDiscovery(_displayName);
         if (!success) {
           _isDiscovering = false;
@@ -217,6 +196,24 @@ class DeviceProvider with ChangeNotifier {
         notifyListeners();
       }
     }
+  }
+
+  /// Manually connect to a device by IP address (useful if UDP broadcast is isolated by a router)
+  Future<bool> connectByIp(String ip, {int port = 53318}) async {
+    final dev = await connectAndGetDevice(ip, port: port);
+    return dev != null;
+  }
+
+  /// Pings a remote device by IP and adds it to discovered devices
+  Future<NearbyDevice?> connectAndGetDevice(String ip, {int port = 53318}) async {
+    final remoteDevice = await _nearbyService.httpClient.ping(ip, port);
+    if (remoteDevice != null) {
+      _foundDevices[remoteDevice.id] = remoteDevice;
+      _nearbyService.addManualDevice(remoteDevice);
+      notifyListeners();
+      return remoteDevice;
+    }
+    return null;
   }
 
   Future<void> stopAll() async {
@@ -233,27 +230,12 @@ class DeviceProvider with ChangeNotifier {
     notifyListeners();
   }
 
-  /// Requests connection and waits for the result callback.
-  /// Returns true only when connection is fully established.
   Future<bool> requestConnectionAndWait(String endpointId) async {
-    _connectionCompleter = Completer<bool>();
-    _pendingConnectionId = endpointId;
-
-    bool requestSent = await _nearbyService.requestConnection(_displayName, endpointId);
-    if (!requestSent) {
-      _connectionCompleter = null;
-      _pendingConnectionId = null;
-      return false;
-    }
-
-    // Wait up to 15 seconds for connection result (increased from 10)
     try {
-      bool connected = await _connectionCompleter!.future.timeout(const Duration(seconds: 15));
-      return connected;
-    } on TimeoutException {
-      debugPrint('[DeviceProvider] Connection timed out for $endpointId');
-      _pendingConnectionId = null;
-      _connectionCompleter = null;
+      final success = await _nearbyService.requestConnection(_displayName, endpointId);
+      return success;
+    } catch (e) {
+      debugPrint('[DeviceProvider] requestConnectionAndWait error: $e');
       return false;
     }
   }

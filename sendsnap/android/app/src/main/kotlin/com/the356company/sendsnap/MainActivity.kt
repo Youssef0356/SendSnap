@@ -1,7 +1,9 @@
 package com.the356company.sendsnap
 
+import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.net.wifi.WifiManager
 import android.os.Build
 import android.os.Environment
 import android.provider.DocumentsContract
@@ -16,6 +18,7 @@ import java.io.FileOutputStream
 class MainActivity : FlutterActivity() {
 
     private val CHANNEL = "com.the356company.sendsnap/file_utils"
+    private var multicastLock: WifiManager.MulticastLock? = null
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -128,8 +131,43 @@ class MainActivity : FlutterActivity() {
                         result.error("OPEN_ERROR", "Could not open file: ${e.message}", null)
                     }
                 }
+                "acquireMulticastLock" -> {
+                    try {
+                        if (multicastLock == null) {
+                            val wifiManager = applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
+                            multicastLock = wifiManager.createMulticastLock("SendSnapMulticastLock").apply {
+                                setReferenceCounted(true)
+                            }
+                        }
+                        if (multicastLock?.isHeld != true) {
+                            multicastLock?.acquire()
+                        }
+                        result.success(true)
+                    } catch (e: Exception) {
+                        result.error("LOCK_ERROR", "Failed to acquire multicast lock: ${e.message}", null)
+                    }
+                }
+                "releaseMulticastLock" -> {
+                    try {
+                        if (multicastLock?.isHeld == true) {
+                            multicastLock?.release()
+                        }
+                        result.success(true)
+                    } catch (e: Exception) {
+                        result.error("LOCK_ERROR", "Failed to release multicast lock: ${e.message}", null)
+                    }
+                }
                 else -> result.notImplemented()
             }
         }
+    }
+
+    override fun onDestroy() {
+        try {
+            if (multicastLock?.isHeld == true) {
+                multicastLock?.release()
+            }
+        } catch (_: Exception) {}
+        super.onDestroy()
     }
 }
