@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'dart:async';
 import 'dart:io';
 import 'dart:ui';
 import '../providers/device_provider.dart';
@@ -17,9 +18,19 @@ import '../widgets/bouncing_card.dart';
 import '../widgets/ambient_background.dart';
 import '../widgets/in_app_file_picker_sheet.dart';
 import '../widgets/qr_scanner_sheet.dart';
+import '../widgets/segmented_edge_portal_dock.dart';
+import '../widgets/draggable_file_token.dart';
+import '../widgets/portal_ghost_card.dart';
+import '../widgets/network_status_pill.dart';
+import '../widgets/network_diagnostics_sheet.dart';
+import '../services/portal_stream_client.dart';
+import 'package:desktop_drop/desktop_drop.dart';
+import 'package:file_picker/file_picker.dart';
+import 'package:path/path.dart' as p;
 
 class HomeScreen extends StatefulWidget {
-  const HomeScreen({super.key});
+  final List<File>? initialFiles;
+  const HomeScreen({super.key, this.initialFiles});
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
@@ -27,6 +38,82 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   List<File> _selectedFiles = [];
+  String _incomingGhostFileName = '';
+  double _incomingGhostPenetration = 0.0;
+  double _incomingGhostY = 0.5;
+  NearbyDevice? _activeHoveredDevice;
+  bool _isDesktopDragging = false;
+  final PortalStreamClient _portalClient = PortalStreamClient();
+  Timer? _discoveryTimer;
+  bool _showDiscoveryTroubleshooter = false;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.initialFiles != null && widget.initialFiles!.isNotEmpty) {
+      _selectedFiles = List.from(widget.initialFiles!);
+    }
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final devProv = Provider.of<DeviceProvider>(context, listen: false);
+      devProv.onPortalEvent = _handleIncomingPortalEvent;
+      if (_selectedFiles.isNotEmpty && !devProv.isDiscovering) {
+        devProv.toggleDiscovery();
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _discoveryTimer?.cancel();
+    _portalClient.disconnect();
+    super.dispose();
+  }
+
+  void _handleIncomingPortalEvent(Map<String, dynamic> event) {
+    if (!mounted) return;
+    final type = event['type'];
+    if (type == 'DRAG_MOVE') {
+      setState(() {
+        _incomingGhostFileName = (event['fileName'] as String?) ?? '';
+        _incomingGhostPenetration = (event['penetration'] as num?)?.toDouble() ?? 0.0;
+        _incomingGhostY = (event['y'] as num?)?.toDouble() ?? 0.5;
+      });
+    } else if (type == 'DRAG_CANCEL') {
+      setState(() {
+        _incomingGhostFileName = '';
+        _incomingGhostPenetration = 0.0;
+      });
+    } else if (type == 'DRAG_DROP') {
+      HapticFeedback.heavyImpact();
+      setState(() {
+        _incomingGhostPenetration = 1.0;
+      });
+      Future.delayed(const Duration(milliseconds: 1000), () {
+        if (mounted) {
+          setState(() {
+            _incomingGhostFileName = '';
+            _incomingGhostPenetration = 0.0;
+          });
+        }
+      });
+    }
+  }
+
+  void _onDragUpdate(Offset globalPos, Size screenSize) {
+    if (_activeHoveredDevice == null || _selectedFiles.isEmpty) return;
+    final threshold = screenSize.width - 150.0;
+    if (globalPos.dx >= threshold) {
+      final penetration = ((globalPos.dx - threshold) / 150.0).clamp(0.0, 1.0);
+      final normalizedY = (globalPos.dy / screenSize.height).clamp(0.0, 1.0);
+      _portalClient.sendDragMove(
+        fileName: p.basename(_selectedFiles.first.path),
+        penetration: penetration,
+        normalizedY: normalizedY,
+      );
+    } else {
+      _portalClient.sendDragCancel();
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -35,34 +122,159 @@ class _HomeScreenState extends State<HomeScreen> {
 
     bool isBusy = devProv.isAdvertising || devProv.isDiscovering;
 
+    // Manage zero-device discovery timer for troubleshooting guidance
+    if (devProv.isDiscovering) {
+      if (devProv.nearbyDevices.isNotEmpty) {
+        _discoveryTimer?.cancel();
+        _discoveryTimer = null;
+        if (_showDiscoveryTroubleshooter) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted) setState(() => _showDiscoveryTroubleshooter = false);
+          });
+        }
+      } else if (_discoveryTimer == null && !_showDiscoveryTroubleshooter) {
+        _discoveryTimer = Timer(const Duration(seconds: 7), () {
+          if (mounted && devProv.isDiscovering && devProv.nearbyDevices.isEmpty) {
+            setState(() {
+              _showDiscoveryTroubleshooter = true;
+            });
+          }
+        });
+      }
+    } else {
+      _discoveryTimer?.cancel();
+      _discoveryTimer = null;
+      if (_showDiscoveryTroubleshooter) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) setState(() => _showDiscoveryTroubleshooter = false);
+        });
+      }
+    }
+
     _showErrorIfNeeded(context, devProv);
 
     return Scaffold(
       backgroundColor: Colors.transparent,
       body: AmbientBackground(
-        child: SafeArea(
-          child: Column(
+        child: DropTarget(
+          onDragEntered: (detail) => setState(() => _isDesktopDragging = true),
+          onDragExited: (detail) => setState(() => _isDesktopDragging = false),
+          onDragDone: (detail) {
+            setState(() {
+              _isDesktopDragging = false;
+              _selectedFiles = detail.files.map((x) => File(x.path)).toList();
+            });
+            if (_selectedFiles.isNotEmpty && !devProv.isDiscovering) {
+              devProv.toggleDiscovery();
+            }
+          },
+          child: Stack(
             children: [
-              Expanded(
-                child: Center(
-                  child: ConstrainedBox(
-                    constraints: const BoxConstraints(maxWidth: 600),
-                    child: SingleChildScrollView(
-                      physics: const BouncingScrollPhysics(),
-                      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.l, vertical: AppSpacing.m),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          _buildHeader(context, devProv),
-                          const SizedBox(height: AppSpacing.xl),
+              SafeArea(
+              child: Column(
+                children: [
+                  Expanded(
+                    child: Center(
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(maxWidth: 600),
+                        child: SingleChildScrollView(
+                          physics: const BouncingScrollPhysics(),
+                          padding: const EdgeInsets.symmetric(horizontal: AppSpacing.l, vertical: AppSpacing.m),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              _buildHeader(context, devProv),
+                              const SizedBox(height: AppSpacing.xl),
 
-                          AnimatedSwitcher(
-                            duration: const Duration(milliseconds: 350),
-                            switchInCurve: Curves.easeOutCubic,
-                            switchOutCurve: Curves.easeInCubic,
-                            child: !isBusy
-                                ? _buildReadyState(context, devProv, transProv)
-                                : _buildBusyState(context, devProv, transProv),
+                              AnimatedSwitcher(
+                                duration: const Duration(milliseconds: 350),
+                                switchInCurve: Curves.easeOutCubic,
+                                switchOutCurve: Curves.easeInCubic,
+                                child: !isBusy
+                                    ? _buildReadyState(context, devProv, transProv)
+                                    : _buildBusyState(context, devProv, transProv),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                  const BannerAdWidget(),
+                ],
+              ),
+            ),
+
+            // Segmented Edge Portal Dock for Discovered Devices (Option B)
+            if (devProv.isDiscovering && devProv.nearbyDevices.isNotEmpty)
+              SegmentedEdgePortalDock(
+                devices: devProv.nearbyDevices,
+                onHoverChanged: (target, penetration, y) {
+                  if (target != _activeHoveredDevice) {
+                    if (_activeHoveredDevice != null) {
+                      _portalClient.sendDragCancel();
+                    }
+                    _activeHoveredDevice = target;
+                  }
+                  if (target != null && _selectedFiles.isNotEmpty) {
+                    _portalClient.connect(target.ip, port: target.port);
+                    _portalClient.sendDragMove(
+                      fileName: p.basename(_selectedFiles.first.path),
+                      penetration: penetration,
+                      normalizedY: y,
+                    );
+                  }
+                },
+                onFileDropped: (target, files) {
+                  if (files.isNotEmpty) {
+                    _portalClient.sendDragDrop(fileName: p.basename(files.first.path));
+                  }
+                  _activeHoveredDevice = null;
+                  _initiateTransfer(context, target, devProv, transProv);
+                },
+              ),
+
+            // Incoming Portal Ghost Card for Receiver Mode
+            PortalGhostCard(
+              isVisible: devProv.isAdvertising && _incomingGhostFileName.isNotEmpty,
+              fileName: _incomingGhostFileName,
+              penetration: _incomingGhostPenetration,
+              normalizedY: _incomingGhostY,
+              isLeftEdge: true,
+            ),
+
+            // Desktop Drag & Drop Visual Overlay
+            if (_isDesktopDragging)
+              Positioned.fill(
+                child: Container(
+                  color: AppColors.primary.withValues(alpha: 0.15),
+                  child: Center(
+                    child: GlassContainer(
+                      blur: 20,
+                      opacity: 0.88,
+                      borderRadius: 28,
+                      padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 24),
+                      borderColor: AppColors.primary.withValues(alpha: 0.5),
+                      child: const Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.file_download_rounded, size: 52, color: AppColors.primary),
+                          SizedBox(height: 12),
+                          Text(
+                            'Drop files to share',
+                            style: TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.w700,
+                              color: AppColors.textPrimary,
+                            ),
+                          ),
+                          SizedBox(height: 4),
+                          Text(
+                            'Release files to automatically discover nearby devices',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: AppColors.textSecondary,
+                            ),
                           ),
                         ],
                       ),
@@ -70,11 +282,10 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                 ),
               ),
-              const BannerAdWidget(),
-            ],
-          ),
+          ],
         ),
       ),
+    ),
       bottomNavigationBar: _buildBottomTransferStatus(context, transProv),
     );
   }
@@ -269,35 +480,7 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         ),
         const SizedBox(height: AppSpacing.xl),
-        if (devProv.localIp != null)
-          GlassContainer(
-            blur: 15,
-            opacity: 0.5,
-            borderRadius: 20,
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Container(
-                  width: 8,
-                  height: 8,
-                  decoration: const BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: AppColors.success,
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Text(
-                  'Connected: ${devProv.localIp}',
-                  style: const TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                    color: AppColors.textSecondary,
-                  ),
-                ),
-              ],
-            ),
-          ),
+        NetworkStatusPill(devProv: devProv),
       ],
     );
   }
@@ -452,25 +635,125 @@ class _HomeScreenState extends State<HomeScreen> {
               : 'Searching for nearby devices...',
         ),
 
-        if (devProv.isDiscovering && _selectedFiles.isNotEmpty) ...[
+        if (devProv.isDiscovering) ...[
           const SizedBox(height: AppSpacing.m),
-          GlassContainer(
-            blur: 16,
-            opacity: 0.70,
-            borderRadius: 18,
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
+          if (_selectedFiles.isNotEmpty) ...[
+            DraggableFileToken(
+              files: _selectedFiles,
+              onClear: () {
+                setState(() {
+                  _selectedFiles = [];
+                });
+              },
+              onAddMore: () => _pickAdditionalFiles(context),
+              onDragUpdate: (globalPos) {
+                _onDragUpdate(globalPos, MediaQuery.of(context).size);
+              },
+            ),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              runSpacing: 6,
+              alignment: WrapAlignment.center,
               children: [
-                const Icon(Icons.attach_file_rounded, size: 16, color: AppColors.primary),
-                const SizedBox(width: 6),
-                Text(
-                  '${_selectedFiles.length} ${_selectedFiles.length == 1 ? 'file' : 'files'} selected to send',
-                  style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13, color: AppColors.textPrimary),
+                BouncingCard(
+                  onTap: () => _pickAdditionalFiles(context),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.85),
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(
+                        color: AppColors.primary.withValues(alpha: 0.35),
+                        width: 1.2,
+                      ),
+                      boxShadow: [
+                        BoxShadow(
+                          color: AppColors.primary.withValues(alpha: 0.08),
+                          blurRadius: 8,
+                          offset: const Offset(0, 2),
+                        ),
+                      ],
+                    ),
+                    child: const Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.add_circle_outline_rounded, size: 15, color: AppColors.primary),
+                        SizedBox(width: 6),
+                        Text(
+                          'Send another file',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                            color: AppColors.primary,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                BouncingCard(
+                  onTap: () => _replaceFiles(context),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.7),
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: Colors.black.withValues(alpha: 0.08)),
+                    ),
+                    child: const Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.swap_horiz_rounded, size: 15, color: AppColors.textSecondary),
+                        SizedBox(width: 5),
+                        Text(
+                          'Change file',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                            color: AppColors.textSecondary,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
                 ),
               ],
             ),
-          ),
+          ] else ...[
+            BouncingCard(
+              onTap: () => _pickAdditionalFiles(context),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
+                decoration: BoxDecoration(
+                  gradient: AppColors.primaryGradient,
+                  borderRadius: BorderRadius.circular(20),
+                  boxShadow: [
+                    BoxShadow(
+                      color: AppColors.primary.withValues(alpha: 0.28),
+                      blurRadius: 12,
+                      offset: const Offset(0, 4),
+                    ),
+                  ],
+                ),
+                child: const Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.add_photo_alternate_rounded, size: 18, color: Colors.white),
+                    SizedBox(width: 8),
+                    Text(
+                      'Choose files to send',
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
         ],
 
         // Receiver IP Glass Card
@@ -548,8 +831,14 @@ class _HomeScreenState extends State<HomeScreen> {
         // Sender Discovered Devices or Manual Connect Action
         if (devProv.isDiscovering) ...[
           const SizedBox(height: AppSpacing.l),
+          NetworkStatusPill(devProv: devProv),
+          const SizedBox(height: AppSpacing.m),
           if (devProv.nearbyDevices.isNotEmpty) ...[
             _buildDeviceDiscovery(context, devProv, transProv),
+            const SizedBox(height: AppSpacing.m),
+          ],
+          if (_showDiscoveryTroubleshooter && devProv.nearbyDevices.isEmpty) ...[
+            _buildTroubleshooterBanner(context, devProv),
             const SizedBox(height: AppSpacing.m),
           ],
           Row(
@@ -636,6 +925,95 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         ),
       ],
+    );
+  }
+
+  Widget _buildTroubleshooterBanner(BuildContext context, DeviceProvider devProv) {
+    return GlassContainer(
+      blur: 16,
+      opacity: 0.85,
+      borderRadius: 22,
+      borderColor: AppColors.primary.withValues(alpha: 0.35),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      boxShadow: [
+        BoxShadow(
+          color: AppColors.primary.withValues(alpha: 0.08),
+          blurRadius: 16,
+          offset: const Offset(0, 4),
+        ),
+      ],
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(6),
+                decoration: BoxDecoration(
+                  color: AppColors.primary.withValues(alpha: 0.15),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(Icons.wifi_find_rounded, size: 18, color: AppColors.primary),
+              ),
+              const SizedBox(width: 10),
+              const Expanded(
+                child: Text(
+                  'Looking for nearby devices...',
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.textPrimary,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          const Text(
+            'Cannot find the other device? Make sure both devices are on the same Wi-Fi, have SendSnap open, and AP isolation is disabled.',
+            style: TextStyle(
+              fontSize: 11.5,
+              color: AppColors.textSecondary,
+              height: 1.35,
+            ),
+          ),
+          const SizedBox(height: 12),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.end,
+            children: [
+              BouncingCard(
+                onTap: () {
+                  HapticFeedback.selectionClick();
+                  NetworkDiagnosticsSheet.show(context, devProv);
+                },
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+                  decoration: BoxDecoration(
+                    color: AppColors.primary.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  child: const Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.troubleshoot_rounded, size: 15, color: AppColors.primary),
+                      SizedBox(width: 6),
+                      Text(
+                        'Network Diagnostics & Tips',
+                        style: TextStyle(
+                          fontSize: 11.5,
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.primary,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
     );
   }
 
@@ -983,12 +1361,85 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _handleSend(BuildContext context, DeviceProvider devProv, TransferProvider transProv) async {
-    final selected = await InAppFilePickerSheet.show(context, allowMultiple: true);
+    List<File>? selected;
+
+    if (!Platform.isAndroid && !Platform.isIOS) {
+      // Desktop (Windows & Linux): Open native File Explorer dialog
+      final result = await FilePicker.platform.pickFiles(
+        allowMultiple: true,
+        type: FileType.any,
+      );
+      if (result != null && result.paths.isNotEmpty) {
+        selected = result.paths
+            .whereType<String>()
+            .map((path) => File(path))
+            .toList();
+      }
+    } else {
+      // Mobile (Android & iOS): Use in-app media & storage picker sheet
+      selected = await InAppFilePickerSheet.show(context, allowMultiple: true);
+    }
+
     if (selected != null && selected.isNotEmpty) {
       setState(() {
-        _selectedFiles = selected;
+        _selectedFiles = selected!;
       });
-      devProv.toggleDiscovery();
+      if (!devProv.isDiscovering) {
+        devProv.toggleDiscovery();
+      }
+    }
+  }
+
+  Future<void> _pickAdditionalFiles(BuildContext context) async {
+    List<File>? selected;
+    if (!Platform.isAndroid && !Platform.isIOS) {
+      final result = await FilePicker.platform.pickFiles(
+        allowMultiple: true,
+        type: FileType.any,
+      );
+      if (result != null && result.paths.isNotEmpty) {
+        selected = result.paths
+            .whereType<String>()
+            .map((path) => File(path))
+            .toList();
+      }
+    } else {
+      selected = await InAppFilePickerSheet.show(context, allowMultiple: true);
+    }
+
+    if (selected != null && selected.isNotEmpty && mounted) {
+      setState(() {
+        final existingPaths = _selectedFiles.map((f) => f.path).toSet();
+        for (final file in selected!) {
+          if (!existingPaths.contains(file.path)) {
+            _selectedFiles.add(file);
+          }
+        }
+      });
+    }
+  }
+
+  Future<void> _replaceFiles(BuildContext context) async {
+    List<File>? selected;
+    if (!Platform.isAndroid && !Platform.isIOS) {
+      final result = await FilePicker.platform.pickFiles(
+        allowMultiple: true,
+        type: FileType.any,
+      );
+      if (result != null && result.paths.isNotEmpty) {
+        selected = result.paths
+            .whereType<String>()
+            .map((path) => File(path))
+            .toList();
+      }
+    } else {
+      selected = await InAppFilePickerSheet.show(context, allowMultiple: true);
+    }
+
+    if (selected != null && selected.isNotEmpty && mounted) {
+      setState(() {
+        _selectedFiles = selected!;
+      });
     }
   }
 
@@ -1011,7 +1462,10 @@ class _HomeScreenState extends State<HomeScreen> {
         _selectedFiles = [];
       });
       if (mounted) {
-        nav.pushNamed('/transfer');
+        nav.pushNamed('/transfer').then((result) {
+          if (!mounted || result != true) return;
+          _handleSend(this.context, devProv, transProv);
+        });
       }
       await transProv.sendFiles(target, filesToSend, devProv.nearbyService);
     } else {
@@ -1105,7 +1559,13 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
               const SizedBox(width: AppSpacing.l),
               BouncingCard(
-                onTap: () => Navigator.pushNamed(context, '/transfer'),
+                onTap: () async {
+                  final result = await Navigator.pushNamed(context, '/transfer');
+                  if (!mounted || result != true) return;
+                  final dp = Provider.of<DeviceProvider>(this.context, listen: false);
+                  final tp = Provider.of<TransferProvider>(this.context, listen: false);
+                  _handleSend(this.context, dp, tp);
+                },
                 child: Container(
                   padding: const EdgeInsets.all(10),
                   decoration: BoxDecoration(

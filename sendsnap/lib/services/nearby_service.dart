@@ -30,6 +30,7 @@ class NearbyService {
   Function(String transferId, int bytesTransferred, int totalBytes, double speed)? onTransferProgress;
   Function(String transferId, String savedPath)? onTransferCompleted;
   Function(String transferId, String error)? onTransferFailed;
+  Function(Map<String, dynamic> event)? onPortalEvent;
 
   NearbyDevice? get localDevice => _localDevice;
   HttpTransferServer get httpServer => _httpServer;
@@ -95,6 +96,10 @@ class NearbyService {
       required String error,
     }) {
       onTransferFailed?.call(fileId, error);
+    };
+
+    _httpServer.onPortalEvent = (event) {
+      onPortalEvent?.call(event);
     };
   }
 

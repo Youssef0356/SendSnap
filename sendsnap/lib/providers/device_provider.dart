@@ -30,6 +30,7 @@ class DeviceProvider with ChangeNotifier {
   List<NearbyDevice> get nearbyDevices => _foundDevices.values.toList();
   NearbyDevice? get connectedDevice => _connectedDevice;
   String? get lastError => _lastError;
+  Function(Map<String, dynamic> event)? onPortalEvent;
 
   NearbyService get nearbyService => _nearbyService;
 
@@ -79,6 +80,10 @@ class DeviceProvider with ChangeNotifier {
         _connectedDevice = null;
       }
       notifyListeners();
+    };
+
+    _nearbyService.onPortalEvent = (event) {
+      onPortalEvent?.call(event);
     };
   }
 

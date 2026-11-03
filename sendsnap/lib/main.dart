@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -10,8 +11,18 @@ import 'screens/settings_screen.dart';
 import 'screens/received_files_screen.dart';
 import 'config/theme.dart';
 
-void main() {
+List<File> _initialLaunchFiles = [];
+
+void main(List<String> args) {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // If launched via "Open With..." on Windows or Linux, grab the passed files
+  if (args.isNotEmpty) {
+    _initialLaunchFiles = args
+        .where((arg) => !arg.startsWith('-') && File(arg).existsSync())
+        .map((path) => File(path))
+        .toList();
+  }
   
   // Support portrait and landscape across phones, tablets, and foldables
   SystemChrome.setPreferredOrientations([
@@ -61,7 +72,7 @@ class _SendSnapAppState extends State<SendSnapApp> {
       initialRoute: '/splash',
       routes: {
         '/splash': (context) => const SplashScreen(),
-        '/home': (context) => const HomeScreen(),
+        '/home': (context) => HomeScreen(initialFiles: _initialLaunchFiles),
         '/transfer': (context) => const TransferScreen(),
         '/settings': (context) => const SettingsScreen(),
         '/received_files': (context) => const ReceivedFilesScreen(),

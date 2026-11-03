@@ -1,12 +1,16 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:path/path.dart' as p;
 import '../providers/transfer_provider.dart';
 import '../config/constants.dart';
 import '../models/transfer.dart';
 import '../services/file_handler.dart';
+import '../services/local_storage_service.dart';
 import '../widgets/glass_container.dart';
 import '../widgets/bouncing_card.dart';
 import '../widgets/ambient_background.dart';
+import '../widgets/media_viewer_modal.dart';
 import 'received_files_screen.dart';
 
 class TransferScreen extends StatelessWidget {
@@ -26,43 +30,48 @@ class TransferScreen extends StatelessWidget {
 
     final isReceiver = current.savedPath != null;
 
-    return Scaffold(
-      backgroundColor: Colors.transparent,
-      appBar: AppBar(
+    return AmbientBackground(
+      child: Scaffold(
         backgroundColor: Colors.transparent,
-        elevation: 0,
-        leading: Padding(
-          padding: const EdgeInsets.only(left: 12),
-          child: BouncingCard(
-            onTap: () {
-              if (current.status == TransferStatus.completed || 
-                  current.status == TransferStatus.failed) {
-                transProv.dismissActiveTransfer();
-              }
-              Navigator.pop(context);
-            },
-            child: Container(
-              margin: const EdgeInsets.all(6),
-              decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.8),
-                shape: BoxShape.circle,
-                border: Border.all(color: Colors.white.withValues(alpha: 0.9), width: 1),
-                boxShadow: [
-                  BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 8, offset: const Offset(0, 2)),
-                ],
+        appBar: AppBar(
+          backgroundColor: Colors.transparent,
+          elevation: 0,
+          leading: Padding(
+            padding: const EdgeInsets.only(left: 12),
+            child: BouncingCard(
+              onTap: () {
+                if (current.status == TransferStatus.completed || 
+                    current.status == TransferStatus.failed) {
+                  transProv.dismissActiveTransfer();
+                }
+                Navigator.pop(context);
+              },
+              child: Container(
+                margin: const EdgeInsets.all(6),
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.8),
+                  shape: BoxShape.circle,
+                  border: Border.all(color: Colors.white.withValues(alpha: 0.9), width: 1),
+                  boxShadow: [
+                    BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 8, offset: const Offset(0, 2)),
+                  ],
+                ),
+                child: const Icon(Icons.close_rounded, color: AppColors.textPrimary, size: 20),
               ),
-              child: const Icon(Icons.close_rounded, color: AppColors.textPrimary, size: 20),
             ),
           ),
+          title: Text(
+            _getTitle(current.status),
+            style: const TextStyle(
+              fontWeight: FontWeight.w800,
+              fontSize: 19,
+              letterSpacing: -0.3,
+              color: AppColors.textPrimary,
+            ),
+          ),
+          centerTitle: true,
         ),
-        title: Text(
-          _getTitle(current.status),
-          style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 19, letterSpacing: -0.3),
-        ),
-        centerTitle: true,
-      ),
-      body: AmbientBackground(
-        child: SafeArea(
+        body: SafeArea(
           child: Center(
             child: SingleChildScrollView(
               physics: const BouncingScrollPhysics(),
@@ -316,7 +325,24 @@ class TransferScreen extends StatelessWidget {
         const SizedBox(height: 24),
         if (isReceiver && current?.savedPath != null) ...[
           BouncingCard(
-            onTap: () => FileHandler.openFile(current!.savedPath!),
+            onTap: () {
+              final path = current!.savedPath!;
+              final ext = p.extension(path).toLowerCase();
+              if (['.jpg', '.jpeg', '.png', '.webp', '.gif', '.bmp', '.heic'].contains(ext)) {
+                final file = File(path);
+                final item = LocalItem(
+                  path: path,
+                  name: p.basename(path),
+                  size: file.existsSync() ? file.lengthSync() : 0,
+                  modified: DateTime.now(),
+                  isDirectory: false,
+                  extension: ext,
+                );
+                MediaViewerModal.show(context, item: item);
+              } else {
+                FileHandler.openFile(path);
+              }
+            },
             child: Container(
               width: double.infinity,
               height: 54,
@@ -377,7 +403,7 @@ class TransferScreen extends StatelessWidget {
         BouncingCard(
           onTap: () {
             transProv.dismissActiveTransfer();
-            Navigator.pop(context);
+            Navigator.pop(context, !isReceiver);
           },
           child: Container(
             width: double.infinity,

@@ -6,6 +6,7 @@ import '../services/local_storage_service.dart';
 import '../widgets/ambient_background.dart';
 import '../widgets/bouncing_card.dart';
 import '../widgets/glass_container.dart';
+import '../widgets/media_viewer_modal.dart';
 
 class ReceivedFilesScreen extends StatefulWidget {
   const ReceivedFilesScreen({super.key});
@@ -210,64 +211,75 @@ class _ReceivedFilesScreenState extends State<ReceivedFilesScreen> {
   }
 
   Widget _buildFileCard(LocalItem item) {
-    return GlassContainer(
-      blur: 20,
-      opacity: 0.75,
-      borderRadius: 18,
-      padding: const EdgeInsets.all(12),
-      child: Row(
-        children: [
-          _buildLeading(item),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  item.name,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w700,
-                    color: AppColors.textPrimary,
-                  ),
-                ),
-                const SizedBox(height: 3),
-                Text(
-                  '${item.formattedSize} • ${_formatDate(item.modified)}',
-                  style: const TextStyle(fontSize: 12, color: AppColors.textSecondary),
-                ),
-              ],
-            ),
-          ),
-          // Open button
-          BouncingCard(
-            onTap: () => FileHandler.openFile(item.path),
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-              decoration: BoxDecoration(
-                gradient: const LinearGradient(colors: [AppColors.accent, AppColors.primary]),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: const Row(
-                mainAxisSize: MainAxisSize.min,
+    return GestureDetector(
+      onTap: () => _openItem(item),
+      child: GlassContainer(
+        blur: 20,
+        opacity: 0.75,
+        borderRadius: 18,
+        padding: const EdgeInsets.all(12),
+        child: Row(
+          children: [
+            _buildLeading(item),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Icon(Icons.visibility_rounded, size: 14, color: Colors.white),
-                  SizedBox(width: 6),
-                  Text('Open', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 12)),
+                  Text(
+                    item.name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.textPrimary,
+                    ),
+                  ),
+                  const SizedBox(height: 3),
+                  Text(
+                    '${item.formattedSize} • ${_formatDate(item.modified)}',
+                    style: const TextStyle(fontSize: 12, color: AppColors.textSecondary),
+                  ),
                 ],
               ),
             ),
-          ),
-          const SizedBox(width: 4),
-          IconButton(
-            icon: const Icon(Icons.delete_outline_rounded, size: 20, color: AppColors.error),
-            onPressed: () => _deleteFile(item),
-          ),
-        ],
+            // Open button
+            BouncingCard(
+              onTap: () => _openItem(item),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(colors: [AppColors.accent, AppColors.primary]),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.visibility_rounded, size: 14, color: Colors.white),
+                    SizedBox(width: 6),
+                    Text('Open', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 12)),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(width: 4),
+            IconButton(
+              icon: const Icon(Icons.delete_outline_rounded, size: 20, color: AppColors.error),
+              onPressed: () => _deleteFile(item),
+            ),
+          ],
+        ),
       ),
     );
+  }
+
+  void _openItem(LocalItem item) {
+    if (item.isImage) {
+      MediaViewerModal.show(context, item: item);
+    } else {
+      FileHandler.openFile(item.path);
+    }
   }
 
   Widget _buildLeading(LocalItem item) {

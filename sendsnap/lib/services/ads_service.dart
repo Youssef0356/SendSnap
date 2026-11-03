@@ -38,6 +38,10 @@ class AdsService {
 
   Future<void> initialize() async {
     if (_initialized) return;
+    if (!Platform.isAndroid && !Platform.isIOS) {
+      _initialized = true;
+      return;
+    }
     try {
       await MobileAds.instance.initialize();
       _initialized = true;
@@ -48,6 +52,7 @@ class AdsService {
   }
 
   void loadInterstitial(Function(InterstitialAd) onLoaded) {
+    if (!Platform.isAndroid && !Platform.isIOS) return;
     InterstitialAd.load(
       adUnitId: interstitialAdUnitId,
       request: const AdRequest(),

@@ -67,6 +67,12 @@ class LocalStorageService {
     if (Platform.isAndroid) {
       final emulated = Directory('/storage/emulated/0');
       if (await emulated.exists()) return emulated.path;
+    } else if (Platform.isWindows) {
+      final user = Platform.environment['USERPROFILE'];
+      if (user != null && await Directory(user).exists()) return user;
+    } else if (Platform.isLinux || Platform.isMacOS) {
+      final home = Platform.environment['HOME'];
+      if (home != null && await Directory(home).exists()) return home;
     }
     try {
       final docDir = await path_provider.getApplicationDocumentsDirectory();
@@ -74,6 +80,25 @@ class LocalStorageService {
     } catch (_) {
       return Directory.current.path;
     }
+  }
+
+  static List<String> _getPlatformFolders(String folderName, List<String> androidDefaults) {
+    if (Platform.isWindows) {
+      final user = Platform.environment['USERPROFILE'] ?? '';
+      return [
+        p.join(user, folderName),
+        p.join(user, 'Downloads'),
+        p.join(user, 'Desktop'),
+      ];
+    } else if (Platform.isLinux || Platform.isMacOS) {
+      final home = Platform.environment['HOME'] ?? '';
+      return [
+        p.join(home, folderName),
+        p.join(home, 'Downloads'),
+        p.join(home, 'Desktop'),
+      ];
+    }
+    return androidDefaults;
   }
 
   static Future<String> getDownloadsPath() async {
@@ -108,34 +133,46 @@ class LocalStorageService {
           return await _listDirectory(sendSnapDir.path);
 
         case StorageCategory.photos:
-          return await _scanForFiles(extensions: _imageExts, targetFolders: [
-            '/storage/emulated/0/DCIM/Camera',
-            '/storage/emulated/0/DCIM',
-            '/storage/emulated/0/Pictures',
-            '/storage/emulated/0/Download',
-          ]);
+          return await _scanForFiles(
+            extensions: _imageExts,
+            targetFolders: _getPlatformFolders('Pictures', [
+              '/storage/emulated/0/DCIM/Camera',
+              '/storage/emulated/0/DCIM',
+              '/storage/emulated/0/Pictures',
+              '/storage/emulated/0/Download',
+            ]),
+          );
 
         case StorageCategory.videos:
-          return await _scanForFiles(extensions: _videoExts, targetFolders: [
-            '/storage/emulated/0/DCIM/Camera',
-            '/storage/emulated/0/Movies',
-            '/storage/emulated/0/Download',
-            '/storage/emulated/0/DCIM',
-          ]);
+          return await _scanForFiles(
+            extensions: _videoExts,
+            targetFolders: _getPlatformFolders('Videos', [
+              '/storage/emulated/0/DCIM/Camera',
+              '/storage/emulated/0/Movies',
+              '/storage/emulated/0/Download',
+              '/storage/emulated/0/DCIM',
+            ]),
+          );
 
         case StorageCategory.audio:
-          return await _scanForFiles(extensions: _audioExts, targetFolders: [
-            '/storage/emulated/0/Music',
-            '/storage/emulated/0/Download',
-            '/storage/emulated/0/Audio',
-            '/storage/emulated/0/Podcasts',
-          ]);
+          return await _scanForFiles(
+            extensions: _audioExts,
+            targetFolders: _getPlatformFolders('Music', [
+              '/storage/emulated/0/Music',
+              '/storage/emulated/0/Download',
+              '/storage/emulated/0/Audio',
+              '/storage/emulated/0/Podcasts',
+            ]),
+          );
 
         case StorageCategory.documents:
-          return await _scanForFiles(extensions: _docExts, targetFolders: [
-            '/storage/emulated/0/Documents',
-            '/storage/emulated/0/Download',
-          ]);
+          return await _scanForFiles(
+            extensions: _docExts,
+            targetFolders: _getPlatformFolders('Documents', [
+              '/storage/emulated/0/Documents',
+              '/storage/emulated/0/Download',
+            ]),
+          );
       }
     } catch (e) {
       debugPrint('[LocalStorageService] Error loading category $category: $e');

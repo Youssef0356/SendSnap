@@ -46,6 +46,7 @@ class HttpTransferServer {
   ProgressCallback? onProgress;
   FileCompletedCallback? onFileCompleted;
   TransferFailedCallback? onFileFailed;
+  ValueChanged<Map<String, dynamic>>? onPortalEvent;
 
   int? get port => _server?.port;
   bool get isRunning => _server != null;
@@ -96,6 +97,18 @@ class HttpTransferServer {
     }
 
     final path = request.uri.path;
+
+    // Fast-path for Live Edge Portal WebSocket stream
+    if (path == '/api/v1/portal/stream' && WebSocketTransformer.isUpgradeRequest(request)) {
+      try {
+        final socket = await WebSocketTransformer.upgrade(request);
+        _handlePortalSocket(socket);
+        return;
+      } catch (e) {
+        debugPrint('[HttpServer] WebSocket upgrade failed: $e');
+        return;
+      }
+    }
 
     try {
       if (path == '/api/v1/info' && request.method == 'GET') {
@@ -299,6 +312,26 @@ class HttpTransferServer {
     request.response.statusCode = HttpStatus.ok;
     request.response.write(jsonEncode({'status': 'cancelled'}));
     await request.response.close();
+  }
+
+  void _handlePortalSocket(WebSocket socket) {
+    socket.listen(
+      (data) {
+        try {
+          final json = jsonDecode(data.toString()) as Map<String, dynamic>;
+          onPortalEvent?.call(json);
+        } catch (e) {
+          debugPrint('[HttpServer] Portal socket parse error: $e');
+        }
+      },
+      onDone: () {
+        onPortalEvent?.call({'type': 'DRAG_CANCEL'});
+      },
+      onError: (err) {
+        onPortalEvent?.call({'type': 'DRAG_CANCEL'});
+      },
+      cancelOnError: true,
+    );
   }
 
   Future<void> stopServer() async {

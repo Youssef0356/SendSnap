@@ -1,0 +1,12 @@
+[Desktop Entry]
+Name=SendSnap
+Comment=Fast Nearby File Share
+Exec=sendsnap %U
+Icon=sendsnap
+Terminal=false
+Type=Application
+Categories=Network;FileTransfer;Utility;
+Keywords=share;airdrop;transfer;wifi;p2p;nearby;
+StartupNotify=true
+StartupWMClass=sendsnap
+MimeType=application/octet-stream;
