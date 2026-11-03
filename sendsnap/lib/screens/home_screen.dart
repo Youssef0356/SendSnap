@@ -23,9 +23,12 @@ import '../widgets/draggable_file_token.dart';
 import '../widgets/portal_ghost_card.dart';
 import '../widgets/network_status_pill.dart';
 import '../widgets/network_diagnostics_sheet.dart';
+import '../widgets/device_avatar.dart';
 import '../services/portal_stream_client.dart';
 import 'package:desktop_drop/desktop_drop.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:path/path.dart' as p;
 
 class HomeScreen extends StatefulWidget {
@@ -46,6 +49,7 @@ class _HomeScreenState extends State<HomeScreen> {
   final PortalStreamClient _portalClient = PortalStreamClient();
   Timer? _discoveryTimer;
   bool _showDiscoveryTroubleshooter = false;
+  bool _showEdgePortalHint = false;
 
   @override
   void initState() {
@@ -53,11 +57,21 @@ class _HomeScreenState extends State<HomeScreen> {
     if (widget.initialFiles != null && widget.initialFiles!.isNotEmpty) {
       _selectedFiles = List.from(widget.initialFiles!);
     }
+    SharedPreferences.getInstance().then((prefs) {
+      if (mounted) {
+        setState(() {
+          _showEdgePortalHint = !(prefs.getBool('has_used_edge_portal') ?? false);
+        });
+      }
+    });
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final devProv = Provider.of<DeviceProvider>(context, listen: false);
       devProv.onPortalEvent = _handleIncomingPortalEvent;
       if (_selectedFiles.isNotEmpty && !devProv.isDiscovering) {
         devProv.toggleDiscovery();
+      }
+      if (Platform.isAndroid) {
+        _checkAndroidSharedFiles();
       }
     });
   }
@@ -99,20 +113,66 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  void _onDragUpdate(Offset globalPos, Size screenSize) {
+  void _onDragUpdate(Offset globalPos, Size screenSize, {String? fileName}) {
     if (_activeHoveredDevice == null || _selectedFiles.isEmpty) return;
     final threshold = screenSize.width - 150.0;
+    final name = fileName ?? (_selectedFiles.isNotEmpty ? p.basename(_selectedFiles.first.path) : '');
     if (globalPos.dx >= threshold) {
       final penetration = ((globalPos.dx - threshold) / 150.0).clamp(0.0, 1.0);
       final normalizedY = (globalPos.dy / screenSize.height).clamp(0.0, 1.0);
       _portalClient.sendDragMove(
-        fileName: p.basename(_selectedFiles.first.path),
+        fileName: name,
         penetration: penetration,
         normalizedY: normalizedY,
       );
     } else {
       _portalClient.sendDragCancel();
     }
+  }
+
+  static const MethodChannel _androidChannel = MethodChannel('com.the356company.sendsnap/file_utils');
+
+  void _checkAndroidSharedFiles() async {
+    try {
+      _androidChannel.setMethodCallHandler((call) async {
+        if (call.method == 'onFilesShared') {
+          final List<dynamic>? paths = call.arguments as List<dynamic>?;
+          if (paths != null && paths.isNotEmpty) {
+            final files = paths
+                .map((p) => File(p.toString()))
+                .where((f) => f.existsSync())
+                .toList();
+            if (files.isNotEmpty && mounted) {
+              setState(() {
+                _selectedFiles = files;
+              });
+              final devProv = Provider.of<DeviceProvider>(context, listen: false);
+              if (!devProv.isDiscovering) {
+                devProv.toggleDiscovery();
+              }
+            }
+          }
+        }
+      });
+
+      final List<dynamic>? initialPaths =
+          await _androidChannel.invokeMethod<List<dynamic>>('getInitialSharedFiles');
+      if (initialPaths != null && initialPaths.isNotEmpty) {
+        final files = initialPaths
+            .map((p) => File(p.toString()))
+            .where((f) => f.existsSync())
+            .toList();
+        if (files.isNotEmpty && mounted) {
+          setState(() {
+            _selectedFiles = files;
+          });
+          final devProv = Provider.of<DeviceProvider>(context, listen: false);
+          if (!devProv.isDiscovering) {
+            devProv.toggleDiscovery();
+          }
+        }
+      }
+    } catch (_) {}
   }
 
   @override
@@ -153,8 +213,25 @@ class _HomeScreenState extends State<HomeScreen> {
 
     _showErrorIfNeeded(context, devProv);
 
-    return Scaffold(
-      backgroundColor: Colors.transparent,
+    return CallbackShortcuts(
+      bindings: <ShortcutActivator, VoidCallback>{
+        const SingleActivator(LogicalKeyboardKey.keyO, control: true): () {
+          _handleSend(this.context, devProv, transProv);
+        },
+        const SingleActivator(LogicalKeyboardKey.keyO, meta: true): () {
+          _handleSend(this.context, devProv, transProv);
+        },
+        const SingleActivator(LogicalKeyboardKey.escape): () {
+          if (isBusy) {
+            devProv.stopAll();
+            setState(() => _selectedFiles = []);
+          }
+        },
+      },
+      child: Focus(
+        autofocus: true,
+        child: Scaffold(
+          backgroundColor: Colors.transparent,
       body: AmbientBackground(
         child: DropTarget(
           onDragEntered: (detail) => setState(() => _isDesktopDragging = true),
@@ -230,7 +307,13 @@ class _HomeScreenState extends State<HomeScreen> {
                     _portalClient.sendDragDrop(fileName: p.basename(files.first.path));
                   }
                   _activeHoveredDevice = null;
-                  _initiateTransfer(context, target, devProv, transProv);
+                  if (_showEdgePortalHint) {
+                    setState(() => _showEdgePortalHint = false);
+                  }
+                  SharedPreferences.getInstance().then(
+                    (prefs) => prefs.setBool('has_used_edge_portal', true),
+                  );
+                  _initiateTransfer(context, target, devProv, transProv, files: files);
                 },
               ),
 
@@ -287,6 +370,8 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
     ),
       bottomNavigationBar: _buildBottomTransferStatus(context, transProv),
+    ),
+    ),
     );
   }
 
@@ -479,6 +564,45 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
           ),
         ),
+        if (Platform.isAndroid || Platform.isIOS) ...[
+          const SizedBox(height: AppSpacing.m),
+          BouncingCard(
+            onTap: () async {
+              final uri = Uri.parse(AppConstants.websiteUrl);
+              try {
+                await launchUrl(uri, mode: LaunchMode.externalApplication);
+              } catch (_) {}
+            },
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.70),
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(
+                  color: AppColors.primary.withValues(alpha: 0.20),
+                  width: 1,
+                ),
+              ),
+              child: const Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.laptop_chromebook_rounded, size: 16, color: AppColors.primary),
+                  SizedBox(width: 8),
+                  Text(
+                    'Get SendSnap for PC / Mac',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.primary,
+                    ),
+                  ),
+                  SizedBox(width: 6),
+                  Icon(Icons.open_in_new_rounded, size: 13, color: AppColors.primary),
+                ],
+              ),
+            ),
+          ),
+        ],
         const SizedBox(height: AppSpacing.xl),
         NetworkStatusPill(devProv: devProv),
       ],
@@ -646,80 +770,19 @@ class _HomeScreenState extends State<HomeScreen> {
                 });
               },
               onAddMore: () => _pickAdditionalFiles(context),
-              onDragUpdate: (globalPos) {
-                _onDragUpdate(globalPos, MediaQuery.of(context).size);
+              onRemoveFile: (file) {
+                setState(() {
+                  _selectedFiles.removeWhere((f) => f.path == file.path);
+                });
+              },
+              onDragUpdate: (globalPos, {fileName}) {
+                _onDragUpdate(globalPos, MediaQuery.of(context).size, fileName: fileName);
               },
             ),
-            const SizedBox(height: 8),
-            Wrap(
-              spacing: 8,
-              runSpacing: 6,
-              alignment: WrapAlignment.center,
-              children: [
-                BouncingCard(
-                  onTap: () => _pickAdditionalFiles(context),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
-                    decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.85),
-                      borderRadius: BorderRadius.circular(16),
-                      border: Border.all(
-                        color: AppColors.primary.withValues(alpha: 0.35),
-                        width: 1.2,
-                      ),
-                      boxShadow: [
-                        BoxShadow(
-                          color: AppColors.primary.withValues(alpha: 0.08),
-                          blurRadius: 8,
-                          offset: const Offset(0, 2),
-                        ),
-                      ],
-                    ),
-                    child: const Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(Icons.add_circle_outline_rounded, size: 15, color: AppColors.primary),
-                        SizedBox(width: 6),
-                        Text(
-                          'Send another file',
-                          style: TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w700,
-                            color: AppColors.primary,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-                BouncingCard(
-                  onTap: () => _replaceFiles(context),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
-                    decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.7),
-                      borderRadius: BorderRadius.circular(16),
-                      border: Border.all(color: Colors.black.withValues(alpha: 0.08)),
-                    ),
-                    child: const Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(Icons.swap_horiz_rounded, size: 15, color: AppColors.textSecondary),
-                        SizedBox(width: 5),
-                        Text(
-                          'Change file',
-                          style: TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600,
-                            color: AppColors.textSecondary,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ],
-            ),
+            if (_showEdgePortalHint && devProv.nearbyDevices.isNotEmpty) ...[
+              const SizedBox(height: 10),
+              _buildEdgePortalHint(),
+            ],
           ] else ...[
             BouncingCard(
               onTap: () => _pickAdditionalFiles(context),
@@ -788,11 +851,11 @@ class _HomeScreenState extends State<HomeScreen> {
                     Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Text('LOCAL ADDRESS', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: AppColors.textSecondary, letterSpacing: 0.8)),
+                        const Text('RECEIVER STATUS', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: AppColors.textSecondary, letterSpacing: 0.8)),
                         const SizedBox(height: 2),
-                        Text(
-                          '${devProv.localIp}:53318',
-                          style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 15, color: AppColors.textPrimary),
+                        const Text(
+                          'Ready to Receive',
+                          style: TextStyle(fontWeight: FontWeight.w800, fontSize: 15, color: AppColors.textPrimary),
                         ),
                       ],
                     ),
@@ -983,6 +1046,38 @@ class _HomeScreenState extends State<HomeScreen> {
             mainAxisAlignment: MainAxisAlignment.end,
             children: [
               BouncingCard(
+                onTap: () async {
+                  final uri = Uri.parse(AppConstants.websiteUrl);
+                  try {
+                    await launchUrl(uri, mode: LaunchMode.externalApplication);
+                  } catch (_) {}
+                },
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.8),
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: AppColors.primary.withValues(alpha: 0.25)),
+                  ),
+                  child: const Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.laptop_chromebook_rounded, size: 14, color: AppColors.primary),
+                      SizedBox(width: 5),
+                      Text(
+                        'Get PC App',
+                        style: TextStyle(
+                          fontSize: 11.5,
+                          fontWeight: FontWeight.w600,
+                          color: AppColors.primary,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              BouncingCard(
                 onTap: () {
                   HapticFeedback.selectionClick();
                   NetworkDiagnosticsSheet.show(context, devProv);
@@ -1051,75 +1146,129 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _buildDeviceItem(BuildContext context, NearbyDevice device, DeviceProvider devProv, TransferProvider transProv) {
-    IconData deviceIcon = Icons.smartphone_rounded;
-    if (device.deviceType == 'windows' || device.deviceType == 'macos' || device.deviceType == 'linux') {
-      deviceIcon = Icons.laptop_rounded;
-    } else if (device.deviceType == 'ios') {
-      deviceIcon = Icons.phone_iphone_rounded;
-    }
-
-    return BouncingCard(
-      onTap: () => _initiateTransfer(context, device, devProv, transProv),
-      child: GlassContainer(
-        blur: 20,
-        opacity: 0.75,
-        borderRadius: 24,
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-        margin: const EdgeInsets.only(right: 14),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.05),
-            blurRadius: 14,
-            offset: const Offset(0, 4),
-          ),
-        ],
-        child: SizedBox(
-          width: 110,
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Container(
-                width: 44,
-                height: 44,
-                decoration: BoxDecoration(
-                  gradient: AppColors.primaryGradient,
-                  shape: BoxShape.circle,
-                  boxShadow: [
-                    BoxShadow(
-                      color: AppColors.primary.withValues(alpha: 0.3),
-                      blurRadius: 8,
-                      offset: const Offset(0, 3),
+    return DragTarget<List<File>>(
+      onWillAcceptWithDetails: (details) => details.data.isNotEmpty,
+      onAcceptWithDetails: (details) {
+        HapticFeedback.heavyImpact();
+        _initiateTransfer(context, device, devProv, transProv, files: details.data);
+      },
+      builder: (context, candidateData, rejectedData) {
+        final isTargeted = candidateData.isNotEmpty;
+        return AnimatedScale(
+          scale: isTargeted ? 1.08 : 1.0,
+          duration: const Duration(milliseconds: 180),
+          curve: Curves.easeOutBack,
+          child: BouncingCard(
+            onTap: () => _initiateTransfer(context, device, devProv, transProv, files: _selectedFiles),
+            child: GlassContainer(
+              blur: 20,
+              opacity: isTargeted ? 0.95 : 0.75,
+              borderRadius: 24,
+              borderColor: isTargeted ? AppColors.primary : Colors.white,
+              borderWidth: isTargeted ? 2.0 : 1.0,
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+              margin: const EdgeInsets.only(right: 14),
+              boxShadow: [
+                BoxShadow(
+                  color: isTargeted
+                      ? AppColors.primary.withValues(alpha: 0.35)
+                      : Colors.black.withValues(alpha: 0.05),
+                  blurRadius: isTargeted ? 20 : 14,
+                  offset: const Offset(0, 4),
+                ),
+              ],
+              child: SizedBox(
+                width: 112,
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    DeviceAvatar(device: device, size: 48),
+                    const SizedBox(height: 10),
+                    Text(
+                      device.endpointName,
+                      style: TextStyle(
+                        fontWeight: FontWeight.w700,
+                        fontSize: 13,
+                        color: isTargeted ? AppColors.primary : AppColors.textPrimary,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      isTargeted ? 'Drop to send' : _getDeviceFriendlySubtitle(device.deviceType),
+                      style: TextStyle(
+                        fontSize: 10,
+                        color: isTargeted ? AppColors.primary : AppColors.textSecondary,
+                        fontWeight: isTargeted ? FontWeight.w700 : FontWeight.w500,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                     ),
                   ],
                 ),
-                child: Icon(deviceIcon, color: Colors.white, size: 22),
               ),
-              const SizedBox(height: 10),
-              Text(
-                device.endpointName,
-                style: const TextStyle(
-                  fontWeight: FontWeight.w700,
-                  fontSize: 13,
-                  color: AppColors.textPrimary,
-                ),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 2),
-              Text(
-                device.ip,
-                style: const TextStyle(
-                  fontSize: 10,
-                  color: AppColors.textSecondary,
-                  fontWeight: FontWeight.w500,
-                ),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-            ],
+            ),
           ),
+        );
+      },
+    );
+  }
+
+  String _getDeviceFriendlySubtitle(String type) {
+    final t = type.toLowerCase();
+    if (t.contains('windows')) return 'Windows PC';
+    if (t.contains('mac')) return 'Mac';
+    if (t.contains('ios') || t.contains('iphone')) return 'iPhone';
+    if (t.contains('ipad')) return 'iPad';
+    if (t.contains('android')) return 'Android';
+    if (t.contains('linux')) return 'Linux PC';
+    return 'Nearby';
+  }
+
+  Widget _buildEdgePortalHint() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+      decoration: BoxDecoration(
+        color: AppColors.primary.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: AppColors.primary.withValues(alpha: 0.35),
+          width: 1,
         ),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(Icons.arrow_forward_rounded, size: 15, color: AppColors.primary),
+          const SizedBox(width: 6),
+          const Text(
+            'Drag file card to right edge to snap directly',
+            style: TextStyle(
+              fontSize: 11.5,
+              fontWeight: FontWeight.w700,
+              color: AppColors.primary,
+            ),
+          ),
+          const SizedBox(width: 8),
+          GestureDetector(
+            onTap: () {
+              setState(() => _showEdgePortalHint = false);
+              SharedPreferences.getInstance().then(
+                (prefs) => prefs.setBool('has_used_edge_portal', true),
+              );
+            },
+            child: Container(
+              padding: const EdgeInsets.all(2),
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: AppColors.primary.withValues(alpha: 0.15),
+              ),
+              child: const Icon(Icons.close_rounded, size: 12, color: AppColors.primary),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -1419,32 +1568,17 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  Future<void> _replaceFiles(BuildContext context) async {
-    List<File>? selected;
-    if (!Platform.isAndroid && !Platform.isIOS) {
-      final result = await FilePicker.platform.pickFiles(
-        allowMultiple: true,
-        type: FileType.any,
-      );
-      if (result != null && result.paths.isNotEmpty) {
-        selected = result.paths
-            .whereType<String>()
-            .map((path) => File(path))
-            .toList();
-      }
-    } else {
-      selected = await InAppFilePickerSheet.show(context, allowMultiple: true);
-    }
-
-    if (selected != null && selected.isNotEmpty && mounted) {
-      setState(() {
-        _selectedFiles = selected!;
-      });
-    }
-  }
-
-  void _initiateTransfer(BuildContext context, NearbyDevice target, DeviceProvider devProv, TransferProvider transProv) async {
-    if (_selectedFiles.isEmpty) return;
+  void _initiateTransfer(
+    BuildContext context,
+    NearbyDevice target,
+    DeviceProvider devProv,
+    TransferProvider transProv, {
+    List<File>? files,
+  }) async {
+    final filesToSend = (files != null && files.isNotEmpty)
+        ? List<File>.from(files)
+        : List<File>.from(_selectedFiles);
+    if (filesToSend.isEmpty) return;
     
     _showConnectingSheet(context, target.endpointName);
 
@@ -1457,14 +1591,18 @@ class _HomeScreenState extends State<HomeScreen> {
     }
 
     if (connected) {
-      final filesToSend = List<File>.from(_selectedFiles);
+      // Remove only the files being sent, preserving any remaining files!
+      final sentPaths = filesToSend.map((f) => f.path).toSet();
       setState(() {
-        _selectedFiles = [];
+        _selectedFiles.removeWhere((f) => sentPaths.contains(f.path));
       });
       if (mounted) {
-        nav.pushNamed('/transfer').then((result) {
-          if (!mounted || result != true) return;
-          _handleSend(this.context, devProv, transProv);
+        nav.pushNamed('/transfer').then((_) {
+          if (!mounted) return;
+          // Keep discovery active so the user can continue dropping remaining files
+          if (_selectedFiles.isNotEmpty && !devProv.isDiscovering) {
+            devProv.toggleDiscovery();
+          }
         });
       }
       await transProv.sendFiles(target, filesToSend, devProv.nearbyService);

@@ -56,3 +56,9 @@ class AppSpacing {
   static const double xl = 32.0;
   static const double xxl = 48.0;
 }
+
+class AppConstants {
+  static const String websiteUrl = 'https://youssef0356.github.io/sendsnap_website/';
+  static const String githubUrl = 'https://github.com/Youssef0356/SendSnap';
+  static const String feedbackEmail = 'nejiyoussef081@gmail.com';
+}

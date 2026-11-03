@@ -1,6 +1,7 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../config/constants.dart';
 import '../providers/device_provider.dart';
 import 'bouncing_card.dart';
@@ -25,12 +26,14 @@ class NetworkDiagnosticsSheet extends StatelessWidget {
   Widget build(BuildContext context) {
     final ip = devProv.localIp;
     final isConnected = ip != null && ip != '0.0.0.0' && ip.isNotEmpty;
+    final maxHeight = MediaQuery.of(context).size.height * 0.85;
 
     return BackdropFilter(
       filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
       child: Container(
+        constraints: BoxConstraints(maxHeight: maxHeight),
         decoration: BoxDecoration(
-          color: Colors.white.withValues(alpha: 0.92),
+          color: Colors.white.withValues(alpha: 0.95),
           borderRadius: const BorderRadius.vertical(top: Radius.circular(32)),
           border: Border.all(color: Colors.white, width: 1.5),
           boxShadow: [
@@ -41,72 +44,85 @@ class NetworkDiagnosticsSheet extends StatelessWidget {
             ),
           ],
         ),
-        padding: const EdgeInsets.fromLTRB(24, 16, 24, 32),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            // Handle bar
-            Center(
-              child: Container(
-                width: 44,
-                height: 5,
-                decoration: BoxDecoration(
-                  color: Colors.black.withValues(alpha: 0.15),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-              ),
-            ),
-            const SizedBox(height: 20),
-
-            // Title Row
-            Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(
-                    color: (isConnected ? AppColors.success : AppColors.warning)
-                        .withValues(alpha: 0.15),
-                    shape: BoxShape.circle,
+            // Pinned Handle Bar & Header
+            Padding(
+              padding: const EdgeInsets.fromLTRB(24, 14, 24, 0),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Center(
+                    child: Container(
+                      width: 44,
+                      height: 5,
+                      decoration: BoxDecoration(
+                        color: Colors.black.withValues(alpha: 0.15),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                    ),
                   ),
-                  child: Icon(
-                    isConnected ? Icons.wifi_rounded : Icons.wifi_off_rounded,
-                    color: isConnected ? AppColors.success : AppColors.warning,
-                    size: 22,
-                  ),
-                ),
-                const SizedBox(width: 14),
-                const Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+                  const SizedBox(height: 16),
+                  Row(
                     children: [
-                      Text(
-                        'Network Diagnostics',
-                        style: TextStyle(
-                          fontSize: 20,
-                          fontWeight: FontWeight.w800,
-                          letterSpacing: -0.4,
-                          color: AppColors.textPrimary,
+                      Container(
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: (isConnected ? AppColors.success : AppColors.warning)
+                              .withValues(alpha: 0.15),
+                          shape: BoxShape.circle,
+                        ),
+                        child: Icon(
+                          isConnected ? Icons.wifi_rounded : Icons.wifi_off_rounded,
+                          color: isConnected ? AppColors.success : AppColors.warning,
+                          size: 22,
                         ),
                       ),
-                      Text(
-                        'Local Wi-Fi & P2P connection status',
-                        style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
+                      const SizedBox(width: 14),
+                      const Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Network Diagnostics',
+                              style: TextStyle(
+                                fontSize: 20,
+                                fontWeight: FontWeight.w800,
+                                letterSpacing: -0.4,
+                                color: AppColors.textPrimary,
+                              ),
+                            ),
+                            Text(
+                              'Local Wi-Fi & P2P connection status',
+                              style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
+                            ),
+                          ],
+                        ),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.close_rounded, color: AppColors.textSecondary),
+                        onPressed: () => Navigator.pop(context),
                       ),
                     ],
                   ),
-                ),
-                IconButton(
-                  icon: const Icon(Icons.close_rounded, color: AppColors.textSecondary),
-                  onPressed: () => Navigator.pop(context),
-                ),
-              ],
+                ],
+              ),
             ),
-            const SizedBox(height: 20),
+            const SizedBox(height: 12),
 
-            // Connection Status Card
-            Container(
-              padding: const EdgeInsets.all(16),
+            // Scrollable Content
+            Flexible(
+              child: SingleChildScrollView(
+                physics: const BouncingScrollPhysics(),
+                padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    // Connection Status Card
+                    Container(
+                      padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
                 color: Colors.black.withValues(alpha: 0.03),
                 borderRadius: BorderRadius.circular(20),
@@ -246,6 +262,17 @@ class NetworkDiagnosticsSheet extends StatelessWidget {
               title: '3. Scan QR Code for Instant Connect',
               description: 'If automatic discovery is blocked by your router, tap the QR scanner to pair directly without broadcast discovery.',
             ),
+            const SizedBox(height: 10),
+
+            _buildTipItem(
+              icon: Icons.laptop_chromebook_rounded,
+              title: '4. Download SendSnap for PC / Mac',
+              description: 'To share files with your computer, visit our official website to download the desktop application for Windows, Mac, or Linux.',
+              onTap: () {
+                final uri = Uri.parse(AppConstants.websiteUrl);
+                launchUrl(uri, mode: LaunchMode.externalApplication);
+              },
+            ),
             const SizedBox(height: 20),
 
             // Action Button
@@ -279,15 +306,20 @@ class NetworkDiagnosticsSheet extends StatelessWidget {
           ],
         ),
       ),
-    );
-  }
+    ),
+  ],
+),
+),
+);
+}
 
   Widget _buildTipItem({
     required IconData icon,
     required String title,
     required String description,
+    VoidCallback? onTap,
   }) {
-    return Container(
+    final card = Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
         color: Colors.white,
@@ -310,13 +342,21 @@ class NetworkDiagnosticsSheet extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  title,
-                  style: const TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w700,
-                    color: AppColors.textPrimary,
-                  ),
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        title,
+                        style: const TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.textPrimary,
+                        ),
+                      ),
+                    ),
+                    if (onTap != null)
+                      const Icon(Icons.arrow_outward_rounded, size: 14, color: AppColors.primary),
+                  ],
                 ),
                 const SizedBox(height: 2),
                 Text(
@@ -333,5 +373,13 @@ class NetworkDiagnosticsSheet extends StatelessWidget {
         ],
       ),
     );
+
+    if (onTap != null) {
+      return BouncingCard(
+        onTap: onTap,
+        child: card,
+      );
+    }
+    return card;
   }
 }

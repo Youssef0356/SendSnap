@@ -5,8 +5,10 @@ import android.content.Intent
 import android.net.Uri
 import android.net.wifi.WifiManager
 import android.os.Build
+import android.os.Bundle
 import android.os.Environment
 import android.provider.DocumentsContract
+import android.provider.OpenableColumns
 import android.webkit.MimeTypeMap
 import androidx.core.content.FileProvider
 import io.flutter.embedding.android.FlutterActivity
@@ -19,12 +21,97 @@ class MainActivity : FlutterActivity() {
 
     private val CHANNEL = "com.the356company.sendsnap/file_utils"
     private var multicastLock: WifiManager.MulticastLock? = null
+    private var sharedFilePaths: ArrayList<String> = ArrayList()
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        handleSendIntent(intent)
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleSendIntent(intent)
+        flutterEngine?.dartExecutor?.binaryMessenger?.let { messenger ->
+            MethodChannel(messenger, CHANNEL).invokeMethod("onFilesShared", sharedFilePaths)
+        }
+    }
+
+    private fun handleSendIntent(intent: Intent?) {
+        if (intent == null) return
+        val action = intent.action
+        if (Intent.ACTION_SEND == action) {
+            val uri = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                intent.getParcelableExtra(Intent.EXTRA_STREAM, Uri::class.java)
+            } else {
+                @Suppress("DEPRECATION")
+                intent.getParcelableExtra<Uri>(Intent.EXTRA_STREAM)
+            } ?: intent.data
+
+            uri?.let {
+                val path = resolveUriToFilePath(it)
+                if (path != null) {
+                    sharedFilePaths = arrayListOf(path)
+                }
+            }
+        } else if (Intent.ACTION_SEND_MULTIPLE == action) {
+            val uris = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                intent.getParcelableArrayListExtra(Intent.EXTRA_STREAM, Uri::class.java)
+            } else {
+                @Suppress("DEPRECATION")
+                intent.getParcelableArrayListExtra<Uri>(Intent.EXTRA_STREAM)
+            }
+
+            val paths = ArrayList<String>()
+            uris?.forEach { uri ->
+                resolveUriToFilePath(uri)?.let { paths.add(it) }
+            }
+            sharedFilePaths = paths
+        }
+    }
+
+    private fun resolveUriToFilePath(uri: Uri): String? {
+        if (uri.scheme == "file") {
+            return uri.path
+        }
+        try {
+            var displayName = "shared_${System.currentTimeMillis()}"
+            contentResolver.query(uri, null, null, null, null)?.use { cursor ->
+                val nameIndex = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                if (nameIndex != -1 && cursor.moveToFirst()) {
+                    val name = cursor.getString(nameIndex)
+                    if (!name.isNullOrBlank()) {
+                        displayName = name
+                    }
+                }
+            }
+
+            val cacheDir = File(cacheDir, "shared_incoming")
+            if (!cacheDir.exists()) cacheDir.mkdirs()
+            val destFile = File(cacheDir, displayName)
+
+            contentResolver.openInputStream(uri)?.use { input ->
+                FileOutputStream(destFile).use { output ->
+                    input.copyTo(output)
+                }
+            }
+            return destFile.absolutePath
+        } catch (e: Exception) {
+            e.printStackTrace()
+            return null
+        }
+    }
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
 
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL).setMethodCallHandler { call, result ->
             when (call.method) {
+                "getInitialSharedFiles" -> {
+                    val list = ArrayList(sharedFilePaths)
+                    sharedFilePaths.clear()
+                    result.success(list)
+                }
                 "copyFromContentUri" -> {
                     val contentUri = call.argument<String>("uri")
                     val destPath = call.argument<String>("destPath")

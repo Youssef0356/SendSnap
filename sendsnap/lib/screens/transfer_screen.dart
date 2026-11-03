@@ -7,14 +7,22 @@ import '../config/constants.dart';
 import '../models/transfer.dart';
 import '../services/file_handler.dart';
 import '../services/local_storage_service.dart';
+import '../services/rating_service.dart';
 import '../widgets/glass_container.dart';
 import '../widgets/bouncing_card.dart';
 import '../widgets/ambient_background.dart';
 import '../widgets/media_viewer_modal.dart';
 import 'received_files_screen.dart';
 
-class TransferScreen extends StatelessWidget {
+class TransferScreen extends StatefulWidget {
   const TransferScreen({super.key});
+
+  @override
+  State<TransferScreen> createState() => _TransferScreenState();
+}
+
+class _TransferScreenState extends State<TransferScreen> {
+  bool _hasTriggeredRating = false;
 
   @override
   Widget build(BuildContext context) {
@@ -26,6 +34,15 @@ class TransferScreen extends StatelessWidget {
         appBar: AppBar(title: const Text('Transfer')),
         body: const Center(child: Text('No active transfers')),
       );
+    }
+
+    if (current.status == TransferStatus.completed && !_hasTriggeredRating) {
+      _hasTriggeredRating = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          RatingService.recordSuccessfulTransfer(context);
+        }
+      });
     }
 
     final isReceiver = current.savedPath != null;
@@ -403,7 +420,7 @@ class TransferScreen extends StatelessWidget {
         BouncingCard(
           onTap: () {
             transProv.dismissActiveTransfer();
-            Navigator.pop(context, !isReceiver);
+            Navigator.pop(context);
           },
           child: Container(
             width: double.infinity,
@@ -422,7 +439,7 @@ class TransferScreen extends StatelessWidget {
             ),
             child: Center(
               child: Text(
-                isReceiver ? 'DONE' : 'SEND ANOTHER FILE',
+                'DONE',
                 style: TextStyle(
                   fontWeight: FontWeight.w800,
                   fontSize: 15,

@@ -94,7 +94,7 @@ class _NetworkStatusPillState extends State<NetworkStatusPill>
 
             // Network Info Text
             Text(
-              isConnected ? 'Wi-Fi: $ip' : 'No Wi-Fi (Tap for help)',
+              isConnected ? 'Wi-Fi Connected' : 'No Wi-Fi (Tap for help)',
               style: TextStyle(
                 fontSize: 12,
                 fontWeight: FontWeight.w600,

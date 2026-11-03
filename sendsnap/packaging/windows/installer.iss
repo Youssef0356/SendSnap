@@ -41,9 +41,15 @@ Source: "..\..\build\windows\x64\runner\Release\*"; DestDir: "{app}"; Flags: ign
 Name: "{autoprograms}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"
 Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon
 Name: "{commonstartup}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: startupicon
+Name: "{userappdata}\Microsoft\Windows\SendTo\SendSnap"; Filename: "{app}\{#MyAppExeName}"
 
 [Registry]
-; Register SendSnap in Windows "Open With..." menu for images, videos, and files
+; 1. Windows Explorer Right-Click Context Menu ("Send with SendSnap")
+Root: HKCR; Subkey: "*\shell\SendSnap"; ValueType: string; ValueName: ""; ValueData: "Send with SendSnap"; Flags: uninsdeletekey
+Root: HKCR; Subkey: "*\shell\SendSnap"; ValueType: string; ValueName: "Icon"; ValueData: """{app}\{#MyAppExeName}"""; Flags: uninsdeletekey
+Root: HKCR; Subkey: "*\shell\SendSnap\command"; ValueType: string; ValueName: ""; ValueData: """{app}\{#MyAppExeName}"" ""%1"""; Flags: uninsdeletekey
+
+; 2. Register SendSnap in Windows "Open With..." menu for images, videos, and files
 Root: HKCR; Subkey: "Applications\{#MyAppExeName}"; ValueType: string; ValueName: "FriendlyAppName"; ValueData: "{#MyAppName}"; Flags: uninsdeletekey
 Root: HKCR; Subkey: "Applications\{#MyAppExeName}\shell\open\command"; ValueType: string; ValueData: """{app}\{#MyAppExeName}"" ""%1"""
 Root: HKCR; Subkey: "Applications\{#MyAppExeName}\SupportedTypes"; ValueType: string; ValueName: ".jpg"; ValueData: ""

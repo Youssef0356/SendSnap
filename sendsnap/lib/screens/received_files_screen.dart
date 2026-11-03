@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../config/constants.dart';
 import '../services/file_handler.dart';
 import '../services/local_storage_service.dart';
@@ -93,10 +94,23 @@ class _ReceivedFilesScreenState extends State<ReceivedFilesScreen> {
         ? _files
         : _files.where((f) => f.name.toLowerCase().contains(_searchQuery.toLowerCase())).toList();
 
-    return Scaffold(
-      backgroundColor: Colors.transparent,
-      body: AmbientBackground(
-        child: SafeArea(
+    return CallbackShortcuts(
+      bindings: <ShortcutActivator, VoidCallback>{
+        const SingleActivator(LogicalKeyboardKey.space): () {
+          if (filtered.isNotEmpty) {
+            _openItem(filtered.first);
+          }
+        },
+        const SingleActivator(LogicalKeyboardKey.escape): () {
+          Navigator.of(context).pop();
+        },
+      },
+      child: Focus(
+        autofocus: true,
+        child: Scaffold(
+          backgroundColor: Colors.transparent,
+          body: AmbientBackground(
+            child: SafeArea(
           child: Center(
             child: ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 600),
@@ -127,6 +141,8 @@ class _ReceivedFilesScreenState extends State<ReceivedFilesScreen> {
           ),
         ),
       ),
+    ),
+    ),
     );
   }
 
@@ -340,25 +356,148 @@ class _ReceivedFilesScreenState extends State<ReceivedFilesScreen> {
 
   Widget _buildEmptyState() {
     return Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(Icons.cloud_download_rounded, size: 64, color: AppColors.textSecondary.withValues(alpha: 0.35)),
-          const SizedBox(height: 14),
-          const Text(
-            'No Received Files Yet',
-            style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: AppColors.textPrimary),
-          ),
-          const SizedBox(height: 6),
-          const Padding(
-            padding: EdgeInsets.symmetric(horizontal: 32),
-            child: Text(
-              'Files received from nearby devices will be saved and managed right here.',
-              textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 13, color: AppColors.textSecondary),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 24),
+        child: GlassContainer(
+          blur: 24,
+          opacity: 0.85,
+          borderRadius: 28,
+          padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 36),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.04),
+              blurRadius: 20,
+              offset: const Offset(0, 6),
             ),
+          ],
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Glowing Ambient Icon Orb
+              Container(
+                width: 72,
+                height: 72,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  gradient: LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [
+                      AppColors.primary.withValues(alpha: 0.18),
+                      AppColors.accent.withValues(alpha: 0.12),
+                    ],
+                  ),
+                  border: Border.all(
+                    color: Colors.white,
+                    width: 2,
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: AppColors.primary.withValues(alpha: 0.15),
+                      blurRadius: 18,
+                      offset: const Offset(0, 6),
+                    ),
+                  ],
+                ),
+                child: const Center(
+                  child: Icon(
+                    Icons.folder_open_rounded,
+                    size: 34,
+                    color: AppColors.primary,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 20),
+
+              const Text(
+                'Your Inbox is Clean',
+                style: TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.w800,
+                  color: AppColors.textPrimary,
+                  letterSpacing: -0.3,
+                ),
+              ),
+              const SizedBox(height: 8),
+
+              const Text(
+                'Files transferred from nearby phones and PCs over Wi-Fi will appear right here with instant previews.',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 13,
+                  color: AppColors.textSecondary,
+                  height: 1.4,
+                ),
+              ),
+              const SizedBox(height: 24),
+
+              // Action Buttons
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  BouncingCard(
+                    onTap: () => Navigator.of(context).pop(),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
+                      decoration: BoxDecoration(
+                        gradient: AppColors.primaryGradient,
+                        borderRadius: BorderRadius.circular(18),
+                        boxShadow: [
+                          BoxShadow(
+                            color: AppColors.primary.withValues(alpha: 0.3),
+                            blurRadius: 10,
+                            offset: const Offset(0, 4),
+                          ),
+                        ],
+                      ),
+                      child: const Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.download_rounded, size: 16, color: Colors.white),
+                          SizedBox(width: 6),
+                          Text(
+                            'Receive Files',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 13,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  BouncingCard(
+                    onTap: _loadReceivedFiles,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                      decoration: BoxDecoration(
+                        color: Colors.black.withValues(alpha: 0.05),
+                        borderRadius: BorderRadius.circular(18),
+                      ),
+                      child: const Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.refresh_rounded, size: 16, color: AppColors.textSecondary),
+                          SizedBox(width: 6),
+                          Text(
+                            'Refresh',
+                            style: TextStyle(
+                              color: AppColors.textSecondary,
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }

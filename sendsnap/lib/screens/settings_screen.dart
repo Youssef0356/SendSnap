@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../providers/device_provider.dart';
 import '../config/constants.dart';
+import '../services/rating_service.dart';
 import '../widgets/glass_container.dart';
 import '../widgets/bouncing_card.dart';
 import '../widgets/ambient_background.dart';
@@ -82,6 +84,125 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                   onChanged: (val) => devProv.updateDisplayName(val),
                                 ),
                               ],
+                            ),
+                          ),
+                          const SizedBox(height: 16),
+                          BouncingCard(
+                            onTap: () => RatingService.showManual(context),
+                            child: GlassContainer(
+                              blur: 20,
+                              opacity: 0.75,
+                              borderRadius: 22,
+                              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+                              child: Row(
+                                children: [
+                                  Container(
+                                    padding: const EdgeInsets.all(10),
+                                    decoration: BoxDecoration(
+                                      shape: BoxShape.circle,
+                                      gradient: const LinearGradient(
+                                        colors: [Color(0xFFFFD700), Color(0xFFFF9500)],
+                                      ),
+                                      boxShadow: [
+                                        BoxShadow(
+                                          color: const Color(0xFFFF9500).withValues(alpha: 0.35),
+                                          blurRadius: 10,
+                                          offset: const Offset(0, 3),
+                                        ),
+                                      ],
+                                    ),
+                                    child: const Icon(Icons.star_rounded, color: Colors.white, size: 20),
+                                  ),
+                                  const SizedBox(width: 14),
+                                  const Expanded(
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          'Rate SendSnap',
+                                          style: TextStyle(
+                                            fontSize: 15,
+                                            fontWeight: FontWeight.w700,
+                                            color: AppColors.textPrimary,
+                                          ),
+                                        ),
+                                        SizedBox(height: 2),
+                                        Text(
+                                          'Leave a review to support continuous development',
+                                          style: TextStyle(
+                                            fontSize: 11,
+                                            fontWeight: FontWeight.w500,
+                                            color: AppColors.textSecondary,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  const Icon(Icons.arrow_forward_ios_rounded, size: 14, color: AppColors.textSecondary),
+                                ],
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          BouncingCard(
+                            onTap: () async {
+                              final uri = Uri.parse(AppConstants.websiteUrl);
+                              try {
+                                await launchUrl(uri, mode: LaunchMode.externalApplication);
+                              } catch (_) {}
+                            },
+                            child: GlassContainer(
+                              blur: 20,
+                              opacity: 0.75,
+                              borderRadius: 22,
+                              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+                              child: Row(
+                                children: [
+                                  Container(
+                                    padding: const EdgeInsets.all(10),
+                                    decoration: BoxDecoration(
+                                      shape: BoxShape.circle,
+                                      gradient: const LinearGradient(
+                                        colors: [Color(0xFF007AFF), Color(0xFF00C7BE)],
+                                      ),
+                                      boxShadow: [
+                                        BoxShadow(
+                                          color: const Color(0xFF007AFF).withValues(alpha: 0.35),
+                                          blurRadius: 10,
+                                          offset: const Offset(0, 3),
+                                        ),
+                                      ],
+                                    ),
+                                    child: const Icon(Icons.laptop_chromebook_rounded, color: Colors.white, size: 20),
+                                  ),
+                                  const SizedBox(width: 14),
+                                  const Expanded(
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          'Get SendSnap for Desktop',
+                                          style: TextStyle(
+                                            fontSize: 15,
+                                            fontWeight: FontWeight.w700,
+                                            color: AppColors.textPrimary,
+                                          ),
+                                        ),
+                                        SizedBox(height: 2),
+                                        Text(
+                                          'Download for Windows, Mac & Linux',
+                                          style: TextStyle(
+                                            fontSize: 11,
+                                            fontWeight: FontWeight.w500,
+                                            color: AppColors.textSecondary,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  const Icon(Icons.open_in_new_rounded, size: 16, color: AppColors.textSecondary),
+                                ],
+                              ),
                             ),
                           ),
                           const Spacer(),
