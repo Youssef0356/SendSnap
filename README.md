@@ -25,8 +25,12 @@
       <img src="https://img.shields.io/badge/Google_Play-Get%20on%20Android-00C853?style=for-the-badge&logo=google-play&logoColor=white" alt="Google Play Store" />
     </a>
     &nbsp;
+    <a href="https://youssef0356.github.io/sendsnap_website/downloads/sendsnap-windows-x64.rar">
+      <img src="https://img.shields.io/badge/Windows%20PC-Download%20(.rar)-0078D4?style=for-the-badge&logo=windows&logoColor=white" alt="Download Windows Executable (.rar)" />
+    </a>
+    &nbsp;
     <a href="https://youssef0356.github.io/sendsnap_website/downloads/sendsnap-windows-x64.zip">
-      <img src="https://img.shields.io/badge/Windows%20PC-Download%20(.zip)-0078D4?style=for-the-badge&logo=windows&logoColor=white" alt="Download Windows Executable" />
+      <img src="https://img.shields.io/badge/Windows%20PC-Download%20(.zip)-0A58CA?style=for-the-badge&logo=windows&logoColor=white" alt="Download Windows Executable (.zip)" />
     </a>
   </p>
 
@@ -57,7 +61,8 @@
 | Platform | Format | Link |
 | :--- | :--- | :--- |
 | **Android** | Google Play Store | [Get SendSnap on Google Play](https://play.google.com/store/apps/details?id=com.the356company.sendsnap) |
-| **Windows (64-bit)** | Standalone Executable (.zip) | [Download `sendsnap-windows-x64.zip`](https://youssef0356.github.io/sendsnap_website/downloads/sendsnap-windows-x64.zip) |
+| **Windows (64-bit)** | Standalone Executable (.rar) | [Download `sendsnap-windows-x64.rar`](https://youssef0356.github.io/sendsnap_website/downloads/sendsnap-windows-x64.rar) |
+| **Windows (64-bit)** | Portable Zip Archive (.zip) | [Download `sendsnap-windows-x64.zip`](https://youssef0356.github.io/sendsnap_website/downloads/sendsnap-windows-x64.zip) |
 | **Website** | Official GitHub Pages Site | [https://youssef0356.github.io/sendsnap_website/](https://youssef0356.github.io/sendsnap_website/) |
 
 ---

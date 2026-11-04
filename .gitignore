@@ -1,6 +1,7 @@
 /.vscode
 sendsnap_website/
 *.zip
+*.rar
 *.jar
 *.pem
 *.jks
