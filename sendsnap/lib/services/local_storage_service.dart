@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart' as path_provider;
 import 'file_handler.dart';
@@ -133,6 +134,10 @@ class LocalStorageService {
           return await _listDirectory(sendSnapDir.path);
 
         case StorageCategory.photos:
+          if (Platform.isAndroid) {
+            final media = await _queryAndroidMediaStore(StorageCategory.photos);
+            if (media.isNotEmpty) return media;
+          }
           return await _scanForFiles(
             extensions: _imageExts,
             targetFolders: _getPlatformFolders('Pictures', [
@@ -144,17 +149,26 @@ class LocalStorageService {
           );
 
         case StorageCategory.videos:
+          if (Platform.isAndroid) {
+            final media = await _queryAndroidMediaStore(StorageCategory.videos);
+            if (media.isNotEmpty) return media;
+          }
           return await _scanForFiles(
             extensions: _videoExts,
             targetFolders: _getPlatformFolders('Videos', [
               '/storage/emulated/0/DCIM/Camera',
+              '/storage/emulated/0/DCIM',
               '/storage/emulated/0/Movies',
               '/storage/emulated/0/Download',
-              '/storage/emulated/0/DCIM',
+              '/storage/emulated/0/Pictures',
             ]),
           );
 
         case StorageCategory.audio:
+          if (Platform.isAndroid) {
+            final media = await _queryAndroidMediaStore(StorageCategory.audio);
+            if (media.isNotEmpty) return media;
+          }
           return await _scanForFiles(
             extensions: _audioExts,
             targetFolders: _getPlatformFolders('Music', [
@@ -226,6 +240,47 @@ class LocalStorageService {
     return [...folders, ...files];
   }
 
+  static Future<List<LocalItem>> _queryAndroidMediaStore(StorageCategory category) async {
+    try {
+      const channel = MethodChannel('com.the356company.sendsnap/file_utils');
+      final typeStr = category == StorageCategory.videos
+          ? 'videos'
+          : category == StorageCategory.photos
+              ? 'photos'
+              : 'audio';
+      final rawList = await channel.invokeMethod<List<dynamic>>(
+        'queryMediaFiles',
+        {'type': typeStr},
+      );
+      if (rawList != null && rawList.isNotEmpty) {
+        final items = <LocalItem>[];
+        for (final entry in rawList) {
+          if (entry is Map) {
+            final path = entry['path']?.toString() ?? '';
+            final name = entry['name']?.toString() ?? p.basename(path);
+            final size = (entry['size'] as num?)?.toInt() ?? 0;
+            final modMs = (entry['modified'] as num?)?.toInt() ?? 0;
+            final ext = p.extension(name).isNotEmpty
+                ? p.extension(name).toLowerCase()
+                : p.extension(path).toLowerCase();
+            items.add(LocalItem(
+              path: path,
+              name: name,
+              size: size,
+              modified: DateTime.fromMillisecondsSinceEpoch(modMs),
+              isDirectory: false,
+              extension: ext,
+            ));
+          }
+        }
+        return items;
+      }
+    } catch (e) {
+      debugPrint('[LocalStorageService] MediaStore query failed: $e');
+    }
+    return [];
+  }
+
   /// Scans known media/documents folders for files matching given extensions.
   static Future<List<LocalItem>> _scanForFiles({
     required List<String> extensions,
@@ -234,6 +289,26 @@ class LocalStorageService {
     final results = <LocalItem>[];
     final visitedPaths = <String>{};
 
+    void processFile(File file) {
+      if (!visitedPaths.contains(file.path)) {
+        final ext = p.extension(file.path).toLowerCase();
+        if (extensions.contains(ext)) {
+          try {
+            final stat = file.statSync();
+            results.add(LocalItem(
+              path: file.path,
+              name: p.basename(file.path),
+              size: stat.size,
+              modified: stat.modified,
+              isDirectory: false,
+              extension: ext,
+            ));
+            visitedPaths.add(file.path);
+          } catch (_) {}
+        }
+      }
+    }
+
     for (final folderPath in targetFolders) {
       final dir = Directory(folderPath);
       if (!await dir.exists()) continue;
@@ -241,22 +316,18 @@ class LocalStorageService {
       try {
         final entities = dir.listSync(recursive: false, followLinks: false);
         for (final entity in entities) {
-          if (entity is File && !visitedPaths.contains(entity.path)) {
-            final ext = p.extension(entity.path).toLowerCase();
-            if (extensions.contains(ext)) {
-              try {
-                final stat = entity.statSync();
-                results.add(LocalItem(
-                  path: entity.path,
-                  name: p.basename(entity.path),
-                  size: stat.size,
-                  modified: stat.modified,
-                  isDirectory: false,
-                  extension: ext,
-                ));
-                visitedPaths.add(entity.path);
-              } catch (_) {}
-            }
+          if (entity is File) {
+            processFile(entity);
+          } else if (entity is Directory && !p.basename(entity.path).startsWith('.')) {
+            // Check immediate subdirectories (e.g. DCIM/Camera, DCIM/100MEDIA, etc.)
+            try {
+              final subEntities = entity.listSync(recursive: false, followLinks: false);
+              for (final sub in subEntities) {
+                if (sub is File) {
+                  processFile(sub);
+                }
+              }
+            } catch (_) {}
           }
         }
       } catch (e) {

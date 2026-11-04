@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import '../config/constants.dart';
 import '../services/local_storage_service.dart';
@@ -58,12 +59,33 @@ class _InAppFilePickerSheetState extends State<InAppFilePickerSheet> {
   }
 
   Future<void> _checkPermissionsAndLoad() async {
-    final granted = await _permService.hasStoragePermission();
+    final granted = await _permService.hasManageExternalStoragePermission();
     if (mounted) {
       setState(() {
         _hasFullStorageAccess = granted;
       });
       _loadCategory(_selectedCategory);
+    }
+  }
+
+  Future<void> _openSystemPicker() async {
+    try {
+      final result = await FilePicker.platform.pickFiles(
+        allowMultiple: widget.allowMultiple,
+        type: FileType.any,
+      );
+      if (result != null && result.paths.isNotEmpty) {
+        final files = result.paths
+            .whereType<String>()
+            .map((p) => File(p))
+            .where((f) => f.existsSync())
+            .toList();
+        if (files.isNotEmpty && mounted) {
+          Navigator.of(context).pop(files);
+        }
+      }
+    } catch (e) {
+      debugPrint('[InAppFilePickerSheet] Error opening system picker: $e');
     }
   }
 
@@ -250,6 +272,11 @@ class _InAppFilePickerSheetState extends State<InAppFilePickerSheet> {
                     letterSpacing: -0.5,
                   ),
                 ),
+              ),
+              IconButton(
+                icon: const Icon(Icons.file_open_rounded, color: AppColors.primary),
+                tooltip: 'Open Phone File Explorer / Gallery',
+                onPressed: _openSystemPicker,
               ),
               IconButton(
                 icon: const Icon(Icons.close_rounded, color: AppColors.textSecondary),
@@ -590,6 +617,19 @@ class _InAppFilePickerSheetState extends State<InAppFilePickerSheet> {
               fontSize: 14,
               fontWeight: FontWeight.w600,
               color: AppColors.textSecondary,
+            ),
+          ),
+          const SizedBox(height: 16),
+          ElevatedButton.icon(
+            onPressed: _openSystemPicker,
+            icon: const Icon(Icons.file_open_rounded, size: 18),
+            label: const Text('Browse Phone File Explorer'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.primary,
+              foregroundColor: Colors.white,
+              elevation: 0,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
             ),
           ),
         ],

@@ -50,6 +50,18 @@ class PermissionService {
     return true;
   }
 
+  /// Check whether MANAGE_EXTERNAL_STORAGE (All Files Access) is granted on Android 11+.
+  Future<bool> hasManageExternalStoragePermission() async {
+    if (Platform.isAndroid) {
+      final androidVersion = await _getAndroidVersion();
+      if (androidVersion >= 30) {
+        return await Permission.manageExternalStorage.isGranted;
+      }
+      return await Permission.storage.isGranted;
+    }
+    return true;
+  }
+
   /// Request all files access (MANAGE_EXTERNAL_STORAGE) if needed for browsing internal storage
   Future<bool> requestStorageManagementIfNeeded() async {
     if (Platform.isAndroid) {
