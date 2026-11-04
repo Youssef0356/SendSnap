@@ -1,5 +1,6 @@
 package com.the356company.sendsnap
 
+import android.content.ContentUris
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
@@ -8,6 +9,7 @@ import android.os.Build
 import android.os.Bundle
 import android.os.Environment
 import android.provider.DocumentsContract
+import android.provider.MediaStore
 import android.provider.OpenableColumns
 import android.webkit.MimeTypeMap
 import androidx.core.content.FileProvider
@@ -74,6 +76,24 @@ class MainActivity : FlutterActivity() {
         if (uri.scheme == "file") {
             return uri.path
         }
+        // If content URI, try resolving the direct file path from MediaStore first (zero-copy)
+        if (uri.scheme == "content") {
+            try {
+                val proj = arrayOf(MediaStore.MediaColumns.DATA)
+                contentResolver.query(uri, proj, null, null, null)?.use { cursor ->
+                    val dataCol = cursor.getColumnIndex(MediaStore.MediaColumns.DATA)
+                    if (dataCol != -1 && cursor.moveToFirst()) {
+                        val realPath = cursor.getString(dataCol)
+                        if (!realPath.isNullOrBlank()) {
+                            val f = File(realPath)
+                            if (f.exists() && f.canRead()) {
+                                return f.absolutePath
+                            }
+                        }
+                    }
+                }
+            } catch (_: Exception) {}
+        }
         try {
             var displayName = "shared_${System.currentTimeMillis()}"
             contentResolver.query(uri, null, null, null, null)?.use { cursor ->
@@ -102,6 +122,62 @@ class MainActivity : FlutterActivity() {
         }
     }
 
+    private fun queryMediaStoreFiles(type: String): List<Map<String, Any>> {
+        val list = mutableListOf<Map<String, Any>>()
+        val uri = when (type.lowercase()) {
+            "videos", "video" -> MediaStore.Video.Media.EXTERNAL_CONTENT_URI
+            "photos", "images", "photo", "image" -> MediaStore.Images.Media.EXTERNAL_CONTENT_URI
+            "audio" -> MediaStore.Audio.Media.EXTERNAL_CONTENT_URI
+            else -> null
+        } ?: return list
+
+        val projection = arrayOf(
+            MediaStore.MediaColumns._ID,
+            MediaStore.MediaColumns.DATA,
+            MediaStore.MediaColumns.DISPLAY_NAME,
+            MediaStore.MediaColumns.SIZE,
+            MediaStore.MediaColumns.DATE_MODIFIED
+        )
+
+        val sortOrder = "${MediaStore.MediaColumns.DATE_MODIFIED} DESC"
+        try {
+            contentResolver.query(uri, projection, null, null, sortOrder)?.use { cursor ->
+                val idCol = cursor.getColumnIndex(MediaStore.MediaColumns._ID)
+                val dataCol = cursor.getColumnIndex(MediaStore.MediaColumns.DATA)
+                val nameCol = cursor.getColumnIndex(MediaStore.MediaColumns.DISPLAY_NAME)
+                val sizeCol = cursor.getColumnIndex(MediaStore.MediaColumns.SIZE)
+                val modCol = cursor.getColumnIndex(MediaStore.MediaColumns.DATE_MODIFIED)
+
+                while (cursor.moveToNext()) {
+                    val id = if (idCol != -1) cursor.getLong(idCol) else 0L
+                    val path = if (dataCol != -1) cursor.getString(dataCol) else null
+                    val name = if (nameCol != -1) cursor.getString(nameCol) else null
+                    val size = if (sizeCol != -1) cursor.getLong(sizeCol) else 0L
+                    val mod = if (modCol != -1) cursor.getLong(modCol) * 1000L else System.currentTimeMillis()
+
+                    val finalName = if (!name.isNullOrBlank()) name else (if (path != null) File(path).name else "file_$id")
+                    val finalPath = if (!path.isNullOrBlank() && File(path).exists()) {
+                        path
+                    } else {
+                        ContentUris.withAppendedId(uri, id).toString()
+                    }
+
+                    list.add(
+                        mapOf(
+                            "path" to finalPath,
+                            "name" to finalName,
+                            "size" to size,
+                            "modified" to mod
+                        )
+                    )
+                }
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+        return list
+    }
+
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
 
@@ -111,6 +187,15 @@ class MainActivity : FlutterActivity() {
                     val list = ArrayList(sharedFilePaths)
                     sharedFilePaths.clear()
                     result.success(list)
+                }
+                "queryMediaFiles" -> {
+                    val mediaType = call.argument<String>("type") ?: "videos"
+                    Thread {
+                        val items = queryMediaStoreFiles(mediaType)
+                        runOnUiThread {
+                            result.success(items)
+                        }
+                    }.start()
                 }
                 "copyFromContentUri" -> {
                     val contentUri = call.argument<String>("uri")

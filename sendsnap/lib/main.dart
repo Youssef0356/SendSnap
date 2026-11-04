@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'providers/device_provider.dart';
 import 'providers/transfer_provider.dart';
+import 'services/tray_and_window_service.dart';
 import 'screens/splash_screen.dart';
 import 'screens/home_screen.dart';
 import 'screens/transfer_screen.dart';
@@ -13,8 +14,13 @@ import 'config/theme.dart';
 
 List<File> _initialLaunchFiles = [];
 
-void main(List<String> args) {
+void main(List<String> args) async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  final isAutostart = args.contains('--autostart');
+  if (TrayAndWindowService.isDesktop) {
+    await TrayAndWindowService.instance.init(isAutostartLaunch: isAutostart);
+  }
 
   // If launched via "Open With..." on Windows or Linux, grab the passed files
   if (args.isNotEmpty) {
@@ -122,6 +128,9 @@ class _SendSnapAppState extends State<SendSnapApp> {
     // Auto-navigate receiver to transfer screen when an incoming transfer starts
     transProv.onTransferStarted = () {
       debugPrint('[SendSnapApp] Transfer started — navigating to transfer screen');
+      if (TrayAndWindowService.isDesktop) {
+        TrayAndWindowService.instance.showWindow();
+      }
       WidgetsBinding.instance.addPostFrameCallback((_) {
         _navigatorKey.currentState?.pushNamed('/transfer');
       });
