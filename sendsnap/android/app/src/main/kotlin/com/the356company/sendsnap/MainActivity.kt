@@ -1,5 +1,6 @@
 package com.the356company.sendsnap
 
+import android.app.DownloadManager
 import android.content.ContentUris
 import android.content.Context
 import android.content.Intent
@@ -69,6 +70,14 @@ class MainActivity : FlutterActivity() {
                 resolveUriToFilePath(uri)?.let { paths.add(it) }
             }
             sharedFilePaths = paths
+        } else if (Intent.ACTION_VIEW == action) {
+            val uri = intent.data
+            uri?.let {
+                val path = resolveUriToFilePath(it)
+                if (path != null) {
+                    sharedFilePaths = arrayListOf(path)
+                }
+            }
         }
     }
 
@@ -124,10 +133,12 @@ class MainActivity : FlutterActivity() {
 
     private fun queryMediaStoreFiles(type: String): List<Map<String, Any>> {
         val list = mutableListOf<Map<String, Any>>()
+        val isRecent = type.lowercase() == "recents" || type.lowercase() == "recent"
         val uri = when (type.lowercase()) {
             "videos", "video" -> MediaStore.Video.Media.EXTERNAL_CONTENT_URI
             "photos", "images", "photo", "image" -> MediaStore.Images.Media.EXTERNAL_CONTENT_URI
             "audio" -> MediaStore.Audio.Media.EXTERNAL_CONTENT_URI
+            "recents", "recent" -> MediaStore.Files.getContentUri("external")
             else -> null
         } ?: return list
 
@@ -139,9 +150,10 @@ class MainActivity : FlutterActivity() {
             MediaStore.MediaColumns.DATE_MODIFIED
         )
 
-        val sortOrder = "${MediaStore.MediaColumns.DATE_MODIFIED} DESC"
+        val selection = if (isRecent) "${MediaStore.MediaColumns.SIZE} > 0" else null
+        val sortOrder = "${MediaStore.MediaColumns.DATE_MODIFIED} DESC LIMIT 150"
         try {
-            contentResolver.query(uri, projection, null, null, sortOrder)?.use { cursor ->
+            contentResolver.query(uri, projection, selection, null, sortOrder)?.use { cursor ->
                 val idCol = cursor.getColumnIndex(MediaStore.MediaColumns._ID)
                 val dataCol = cursor.getColumnIndex(MediaStore.MediaColumns.DATA)
                 val nameCol = cursor.getColumnIndex(MediaStore.MediaColumns.DISPLAY_NAME)
@@ -176,6 +188,114 @@ class MainActivity : FlutterActivity() {
             e.printStackTrace()
         }
         return list
+    }
+
+    private fun openFileManagerAtFolder(folderPath: String, filePath: String?): Boolean {
+        val folder = File(folderPath)
+        if (!folder.exists()) {
+            try {
+                folder.mkdirs()
+            } catch (_: Exception) {}
+        }
+
+        // 1. Try DocumentsContract direct Document URI pointing to SendSnap folder in Downloads
+        try {
+            val externalStoragePath = Environment.getExternalStorageDirectory().absolutePath
+            val relativePath = if (folderPath.startsWith(externalStoragePath)) {
+                folderPath.removePrefix(externalStoragePath).trimStart('/')
+            } else {
+                "Download/SendSnap"
+            }
+            val docId = "primary:$relativePath"
+            val uri = DocumentsContract.buildDocumentUri("com.android.externalstorage.documents", docId)
+
+            val intent = Intent(Intent.ACTION_VIEW).apply {
+                setDataAndType(uri, DocumentsContract.Document.MIME_TYPE_DIR)
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            if (intent.resolveActivity(packageManager) != null) {
+                startActivity(intent)
+                return true
+            }
+        } catch (_: Exception) {}
+
+        // 2. Try FileProvider URI with directory / folder mime types
+        try {
+            val contentUri = FileProvider.getUriForFile(
+                this,
+                "${applicationContext.packageName}.fileprovider",
+                folder
+            )
+            val mimeTypes = arrayOf(
+                "resource/folder",
+                DocumentsContract.Document.MIME_TYPE_DIR,
+                "vnd.android.document/directory",
+                "*/*"
+            )
+            for (mime in mimeTypes) {
+                try {
+                    val intent = Intent(Intent.ACTION_VIEW).apply {
+                        setDataAndType(contentUri, mime)
+                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    }
+                    if (intent.resolveActivity(packageManager) != null) {
+                        startActivity(intent)
+                        return true
+                    }
+                } catch (_: Exception) {}
+            }
+        } catch (_: Exception) {}
+
+        // 3. Try standard DownloadManager ACTION_VIEW_DOWNLOADS
+        try {
+            val dmIntent = Intent(DownloadManager.ACTION_VIEW_DOWNLOADS).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            if (dmIntent.resolveActivity(packageManager) != null) {
+                startActivity(dmIntent)
+                return true
+            }
+        } catch (_: Exception) {}
+
+        // 4. Try OEM File Managers (Google Files, Samsung My Files, Xiaomi, OnePlus, Oppo, etc.)
+        val knownPackages = arrayOf(
+            "com.google.android.apps.nfiles",      // Files by Google
+            "com.sec.android.app.myfiles",         // Samsung My Files
+            "com.mi.android.globalFileexplorer",   // Xiaomi File Manager
+            "com.oneplus.filemanager",             // OnePlus File Manager
+            "com.coloros.filemanager",             // Oppo / Realme
+            "com.huawei.hidisk",                   // Huawei Files
+            "com.android.documentsui"              // AOSP Files
+        )
+        for (pkg in knownPackages) {
+            try {
+                val launchIntent = packageManager.getLaunchIntentForPackage(pkg)
+                if (launchIntent != null) {
+                    launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    startActivity(launchIntent)
+                    return true
+                }
+            } catch (_: Exception) {}
+        }
+
+        // 5. Generic ACTION_VIEW fallback to external storage documents root
+        try {
+            val genericIntent = Intent(Intent.ACTION_VIEW).apply {
+                setDataAndType(
+                    Uri.parse("content://com.android.externalstorage.documents/root/primary"),
+                    "vnd.android.document/root"
+                )
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            if (genericIntent.resolveActivity(packageManager) != null) {
+                startActivity(genericIntent)
+                return true
+            }
+        } catch (_: Exception) {}
+
+        return false
     }
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
@@ -226,52 +346,11 @@ class MainActivity : FlutterActivity() {
                 }
                 "openFileManager" -> {
                     val path = call.argument<String>("path")
-                    if (path == null) {
-                        result.error("INVALID_ARGS", "path is required", null)
-                        return@setMethodCallHandler
-                    }
+                        ?: (Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS).absolutePath + "/SendSnap")
+                    val filePath = call.argument<String>("filePath")
                     try {
-                        // Try to open the system file manager at the specific directory
-                        val intent = Intent(Intent.ACTION_VIEW)
-                        val uri = Uri.parse(path)
-                        
-                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                            // Use DocumentsUI for Android O+
-                            val docsIntent = Intent(Intent.ACTION_VIEW)
-                            docsIntent.setDataAndType(uri, "resource/folder")
-                            docsIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                            
-                            // Try the Documents UI intent first
-                            try {
-                                startActivity(docsIntent)
-                                result.success(true)
-                                return@setMethodCallHandler
-                            } catch (e: Exception) {
-                                // Fall through to generic approach
-                            }
-                        }
-
-                        // Fallback: open the Downloads folder using the Downloads provider
-                        val downloadsIntent = Intent(Intent.ACTION_VIEW)
-                        downloadsIntent.setDataAndType(
-                            Uri.parse("content://com.android.externalstorage.documents/document/primary:Download/SendSnap"),
-                            DocumentsContract.Document.MIME_TYPE_DIR
-                        )
-                        downloadsIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                        try {
-                            startActivity(downloadsIntent)
-                            result.success(true)
-                            return@setMethodCallHandler
-                        } catch (e: Exception) {
-                            // Last fallback: just open the file manager
-                        }
-
-                        // Last fallback: open any file manager
-                        val fallbackIntent = Intent(Intent.ACTION_VIEW)
-                        fallbackIntent.setDataAndType(Uri.parse("content://com.android.externalstorage.documents/root/primary"), "vnd.android.document/root")
-                        fallbackIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                        startActivity(fallbackIntent)
-                        result.success(true)
+                        val opened = openFileManagerAtFolder(path, filePath)
+                        result.success(opened)
                     } catch (e: Exception) {
                         result.error("OPEN_ERROR", "Could not open file manager: ${e.message}", null)
                     }

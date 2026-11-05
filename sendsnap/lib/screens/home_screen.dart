@@ -25,6 +25,7 @@ import '../widgets/network_status_pill.dart';
 import '../widgets/network_diagnostics_sheet.dart';
 import '../widgets/device_avatar.dart';
 import '../services/portal_stream_client.dart';
+import '../services/file_handler.dart';
 import 'package:desktop_drop/desktop_drop.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -460,6 +461,45 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
           const SizedBox(width: 8),
           BouncingCard(
+            onTap: () async {
+              final messenger = ScaffoldMessenger.of(context);
+              final ok = await FileHandler.openFolder();
+              if (!ok && mounted) {
+                final dir = await FileHandler.getDownloadsDirectory();
+                if (!mounted) return;
+                messenger.showSnackBar(
+                  SnackBar(
+                    content: Text('Folder: ${dir.path}'),
+                    action: SnackBarAction(
+                      label: 'Copy Path',
+                      onPressed: () => Clipboard.setData(ClipboardData(text: dir.path)),
+                    ),
+                  ),
+                );
+              }
+            },
+            child: Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.8),
+                shape: BoxShape.circle,
+                border: Border.all(
+                  color: Colors.white.withValues(alpha: 0.9),
+                  width: 1,
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.04),
+                    blurRadius: 8,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
+              ),
+              child: const Icon(Icons.folder_open_rounded, size: 20, color: AppColors.primary),
+            ),
+          ),
+          const SizedBox(width: 8),
+          BouncingCard(
             onTap: () => Navigator.pushNamed(context, '/settings'),
             child: Container(
               padding: const EdgeInsets.all(10),
@@ -557,6 +597,35 @@ class _HomeScreenState extends State<HomeScreen> {
                         ),
                       ),
                     ],
+                  ),
+                ),
+                BouncingCard(
+                  onTap: () => FileHandler.openFolder(),
+                  child: Tooltip(
+                    message: 'Open folder in File Manager',
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                      margin: const EdgeInsets.only(right: 8),
+                      decoration: BoxDecoration(
+                        color: AppColors.primary.withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: const Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.folder_open_rounded, size: 16, color: AppColors.primary),
+                          SizedBox(width: 4),
+                          Text(
+                            'Open Folder',
+                            style: TextStyle(
+                              color: AppColors.primary,
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
                   ),
                 ),
                 const Icon(Icons.arrow_forward_ios_rounded, size: 14, color: AppColors.textSecondary),

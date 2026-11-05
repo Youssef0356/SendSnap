@@ -185,6 +185,28 @@ class _ReceivedFilesScreenState extends State<ReceivedFilesScreen> {
             ),
           ),
           IconButton(
+            tooltip: 'Open in File Manager',
+            icon: const Icon(Icons.folder_open_rounded, color: AppColors.primary),
+            onPressed: () async {
+              final messenger = ScaffoldMessenger.of(context);
+              final ok = await FileHandler.openFolder();
+              if (!ok && mounted) {
+                final dir = await FileHandler.getDownloadsDirectory();
+                if (!mounted) return;
+                messenger.showSnackBar(
+                  SnackBar(
+                    content: Text('Folder: ${dir.path}'),
+                    action: SnackBarAction(
+                      label: 'Copy Path',
+                      onPressed: () => Clipboard.setData(ClipboardData(text: dir.path)),
+                    ),
+                  ),
+                );
+              }
+            },
+          ),
+          IconButton(
+            tooltip: 'Refresh',
             icon: const Icon(Icons.refresh_rounded, color: AppColors.primary),
             onPressed: _loadReceivedFiles,
           ),
@@ -230,8 +252,8 @@ class _ReceivedFilesScreenState extends State<ReceivedFilesScreen> {
     return GestureDetector(
       onTap: () => _openItem(item),
       child: GlassContainer(
-        blur: 20,
-        opacity: 0.75,
+        blur: 0,
+        opacity: 0.85,
         borderRadius: 18,
         padding: const EdgeInsets.all(12),
         child: Row(
@@ -281,6 +303,12 @@ class _ReceivedFilesScreenState extends State<ReceivedFilesScreen> {
             ),
             const SizedBox(width: 4),
             IconButton(
+              tooltip: 'Show in File Manager',
+              icon: const Icon(Icons.folder_open_rounded, size: 20, color: AppColors.textSecondary),
+              onPressed: () => FileHandler.openFolder(filePath: item.path),
+            ),
+            IconButton(
+              tooltip: 'Delete',
               icon: const Icon(Icons.delete_outline_rounded, size: 20, color: AppColors.error),
               onPressed: () => _deleteFile(item),
             ),
@@ -307,6 +335,10 @@ class _ReceivedFilesScreenState extends State<ReceivedFilesScreen> {
           height: 44,
           child: Image.file(
             File(item.path),
+            width: 44,
+            height: 44,
+            cacheWidth: 100,
+            cacheHeight: 100,
             fit: BoxFit.cover,
             errorBuilder: (context, error, stackTrace) => _buildGenericIcon(item),
           ),
@@ -459,6 +491,32 @@ class _ReceivedFilesScreenState extends State<ReceivedFilesScreen> {
                             'Receive Files',
                             style: TextStyle(
                               color: Colors.white,
+                              fontSize: 13,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  BouncingCard(
+                    onTap: () => FileHandler.openFolder(),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                      decoration: BoxDecoration(
+                        color: Colors.black.withValues(alpha: 0.05),
+                        borderRadius: BorderRadius.circular(18),
+                      ),
+                      child: const Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.folder_open_rounded, size: 16, color: AppColors.primary),
+                          SizedBox(width: 6),
+                          Text(
+                            'Open Folder',
+                            style: TextStyle(
+                              color: AppColors.primary,
                               fontSize: 13,
                               fontWeight: FontWeight.w700,
                             ),

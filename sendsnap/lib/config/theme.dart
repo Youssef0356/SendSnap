@@ -3,10 +3,25 @@ import 'package:google_fonts/google_fonts.dart';
 import 'constants.dart';
 
 class AppTheme {
+  static ThemeData? _cachedLightTheme;
+
   static ThemeData lightTheme() {
+    return _cachedLightTheme ??= _buildLightTheme();
+  }
+
+  static ThemeData _buildLightTheme() {
     return ThemeData(
       useMaterial3: true,
       brightness: Brightness.light,
+      pageTransitionsTheme: const PageTransitionsTheme(
+        builders: {
+          TargetPlatform.android: CupertinoPageTransitionsBuilder(),
+          TargetPlatform.iOS: CupertinoPageTransitionsBuilder(),
+          TargetPlatform.windows: CupertinoPageTransitionsBuilder(),
+          TargetPlatform.macOS: CupertinoPageTransitionsBuilder(),
+          TargetPlatform.linux: CupertinoPageTransitionsBuilder(),
+        },
+      ),
       colorScheme: ColorScheme.fromSeed(
         seedColor: AppColors.primary,
         surface: AppColors.surface,

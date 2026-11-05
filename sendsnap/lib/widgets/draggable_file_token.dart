@@ -103,14 +103,18 @@ class _DraggableFileTokenState extends State<DraggableFileToken> {
                   color: AppColors.textSecondary.withValues(alpha: 0.8),
                 ),
                 const SizedBox(width: 5),
-                Text(
-                  count > 1
-                      ? 'Drop file per file or drag header to send all'
-                      : 'Drag card to nearby device or right edge to send',
-                  style: TextStyle(
-                    fontSize: 10.5,
-                    fontWeight: FontWeight.w600,
-                    color: AppColors.textSecondary.withValues(alpha: 0.8),
+                Flexible(
+                  child: Text(
+                    count > 1
+                        ? 'Drop file per file or drag header to send all'
+                        : 'Drag card to nearby device or right edge to send',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 10.5,
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.textSecondary.withValues(alpha: 0.8),
+                    ),
                   ),
                 ),
               ],
@@ -219,7 +223,7 @@ class _DraggableFileTokenState extends State<DraggableFileToken> {
 
   Widget _buildMasterPill(int count, String totalSize, {required bool isDragging}) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
       decoration: BoxDecoration(
         gradient: isDragging ? AppColors.sendGradient : null,
         color: !isDragging ? AppColors.primary.withValues(alpha: 0.09) : null,
@@ -234,25 +238,30 @@ class _DraggableFileTokenState extends State<DraggableFileToken> {
         children: [
           Icon(
             Icons.drag_indicator_rounded,
-            size: 16,
+            size: 15,
             color: isDragging ? Colors.white : AppColors.primary,
           ),
-          const SizedBox(width: 6),
-          Text(
-            count > 1 ? 'DRAG ALL ($count)' : 'DRAG TO SEND',
-            style: TextStyle(
-              fontSize: 11.5,
-              fontWeight: FontWeight.w800,
-              letterSpacing: 0.5,
-              color: isDragging ? Colors.white : AppColors.primary,
+          const SizedBox(width: 4),
+          Flexible(
+            child: Text(
+              count > 1 ? 'DRAG ALL ($count)' : 'DRAG TO SEND',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w800,
+                letterSpacing: 0.3,
+                color: isDragging ? Colors.white : AppColors.primary,
+              ),
             ),
           ),
           if (totalSize.isNotEmpty) ...[
-            const SizedBox(width: 6),
+            const SizedBox(width: 4),
             Text(
               '• $totalSize',
+              maxLines: 1,
               style: TextStyle(
-                fontSize: 11,
+                fontSize: 10.5,
                 fontWeight: FontWeight.w600,
                 color: isDragging
                     ? Colors.white.withValues(alpha: 0.85)
@@ -378,6 +387,8 @@ class _DraggableFileTokenState extends State<DraggableFileToken> {
                     file,
                     width: 30,
                     height: 30,
+                    cacheWidth: 80,
+                    cacheHeight: 80,
                     fit: BoxFit.cover,
                     errorBuilder: (context, error, stackTrace) => _buildIconBadge(typeInfo),
                   ),

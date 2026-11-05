@@ -38,4 +38,4 @@ Produces `dist/linux/SendSnap-x86_64.AppImage` (runs on Ubuntu, Fedora, Arch, Mi
 ```bash
 bash packaging/linux/build_deb.sh
 ```
-Produces `dist/linux/sendsnap_2.2.1_amd64.deb`.
+Produces `dist/linux/sendsnap_2.2.2_amd64.deb`.

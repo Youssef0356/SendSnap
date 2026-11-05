@@ -31,7 +31,7 @@ class InAppFilePickerSheet extends StatefulWidget {
 }
 
 class _InAppFilePickerSheetState extends State<InAppFilePickerSheet> {
-  StorageCategory _selectedCategory = StorageCategory.downloads;
+  StorageCategory _selectedCategory = StorageCategory.recent;
   final TextEditingController _searchController = TextEditingController();
   final Set<String> _selectedPaths = {};
   
@@ -324,6 +324,7 @@ class _InAppFilePickerSheetState extends State<InAppFilePickerSheet> {
 
   Widget _buildCategoryTabs() {
     final categories = [
+      (StorageCategory.recent, 'Recent', Icons.schedule_rounded),
       (StorageCategory.downloads, 'Downloads', Icons.download_rounded),
       (StorageCategory.photos, 'Photos', Icons.photo_library_rounded),
       (StorageCategory.videos, 'Videos', Icons.movie_creation_rounded),
@@ -552,6 +553,10 @@ class _InAppFilePickerSheetState extends State<InAppFilePickerSheet> {
           height: 44,
           child: Image.file(
             File(item.path),
+            width: 44,
+            height: 44,
+            cacheWidth: 100,
+            cacheHeight: 100,
             fit: BoxFit.cover,
             errorBuilder: (context, error, stackTrace) => _buildGenericIcon(item),
           ),

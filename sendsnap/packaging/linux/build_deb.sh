@@ -6,7 +6,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 DEB_DIR="$PROJECT_ROOT/build/deb_package"
 DIST_DIR="$PROJECT_ROOT/dist/linux"
-VERSION="2.2.1"
+VERSION="2.2.2"
 
 echo "=== Building SendSnap .deb Package ==="
 

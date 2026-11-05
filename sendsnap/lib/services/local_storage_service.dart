@@ -6,6 +6,7 @@ import 'package:path_provider/path_provider.dart' as path_provider;
 import 'file_handler.dart';
 
 enum StorageCategory {
+  recent,
   files,
   downloads,
   photos,
@@ -121,6 +122,13 @@ class LocalStorageService {
   }) async {
     try {
       switch (category) {
+        case StorageCategory.recent:
+          if (Platform.isAndroid) {
+            final media = await _queryAndroidMediaStore(StorageCategory.recent);
+            if (media.isNotEmpty) return media;
+          }
+          return await _getRecentFiles();
+
         case StorageCategory.files:
           final targetPath = currentDirectoryPath ?? await getRootStoragePath();
           return await _listDirectory(targetPath);
@@ -247,7 +255,9 @@ class LocalStorageService {
           ? 'videos'
           : category == StorageCategory.photos
               ? 'photos'
-              : 'audio';
+              : category == StorageCategory.audio
+                  ? 'audio'
+                  : 'recents';
       final rawList = await channel.invokeMethod<List<dynamic>>(
         'queryMediaFiles',
         {'type': typeStr},
@@ -337,6 +347,80 @@ class LocalStorageService {
 
     // Sort newest first
     results.sort((a, b) => b.modified.compareTo(a.modified));
+    return results;
+  }
+
+  /// Scans common storage folders for the most recent files across the system.
+  static Future<List<LocalItem>> _getRecentFiles() async {
+    final searchFolders = <String>[];
+    if (Platform.isAndroid) {
+      searchFolders.addAll([
+        '/storage/emulated/0/DCIM/Camera',
+        '/storage/emulated/0/DCIM',
+        '/storage/emulated/0/Pictures/Screenshots',
+        '/storage/emulated/0/Pictures',
+        '/storage/emulated/0/Download',
+        '/storage/emulated/0/Documents',
+      ]);
+    } else if (Platform.isWindows) {
+      final user = Platform.environment['USERPROFILE'] ?? '';
+      searchFolders.addAll([
+        p.join(user, 'Downloads'),
+        p.join(user, 'Desktop'),
+        p.join(user, 'Documents'),
+        p.join(user, 'Pictures'),
+      ]);
+    } else {
+      final home = Platform.environment['HOME'] ?? '';
+      searchFolders.addAll([
+        p.join(home, 'Downloads'),
+        p.join(home, 'Desktop'),
+        p.join(home, 'Documents'),
+        p.join(home, 'Pictures'),
+      ]);
+    }
+
+    try {
+      final sendSnapDir = await FileHandler.getDownloadsDirectory();
+      searchFolders.add(sendSnapDir.path);
+    } catch (_) {}
+
+    final results = <LocalItem>[];
+    final visitedPaths = <String>{};
+
+    for (final folderPath in searchFolders) {
+      final dir = Directory(folderPath);
+      if (!await dir.exists()) continue;
+
+      try {
+        final entries = dir.listSync(recursive: false, followLinks: false);
+        for (final entry in entries) {
+          if (entry is File && !visitedPaths.contains(entry.path)) {
+            final name = p.basename(entry.path);
+            if (name.startsWith('.')) continue;
+
+            try {
+              final stat = entry.statSync();
+              final ext = p.extension(entry.path).toLowerCase();
+              results.add(LocalItem(
+                path: entry.path,
+                name: name,
+                size: stat.size,
+                modified: stat.modified,
+                isDirectory: false,
+                extension: ext,
+              ));
+              visitedPaths.add(entry.path);
+            } catch (_) {}
+          }
+        }
+      } catch (_) {}
+    }
+
+    results.sort((a, b) => b.modified.compareTo(a.modified));
+    if (results.length > 150) {
+      return results.sublist(0, 150);
+    }
     return results;
   }
 }

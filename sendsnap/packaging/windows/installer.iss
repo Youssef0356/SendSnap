@@ -2,7 +2,7 @@
 ; Produces a modern, professional setup wizard with automated firewall rule registration
 
 #define MyAppName "SendSnap"
-#define MyAppVersion "2.2.1"
+#define MyAppVersion "2.2.2"
 #define MyAppPublisher "The 356 Company"
 #define MyAppURL "https://sendsnap.com"
 #define MyAppExeName "sendsnap.exe"

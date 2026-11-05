@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:path/path.dart' as p;
 import '../providers/transfer_provider.dart';
@@ -96,7 +97,7 @@ class _TransferScreenState extends State<TransferScreen> {
               child: ConstrainedBox(
                 constraints: const BoxConstraints(maxWidth: 500),
                 child: GlassContainer(
-                  blur: 30,
+                  blur: 16,
                   opacity: 0.72,
                   borderRadius: 36,
                   padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 36),
@@ -382,6 +383,47 @@ class _TransferScreenState extends State<TransferScreen> {
                   Text(
                     'OPEN FILE',
                     style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800, letterSpacing: 0.5),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+          BouncingCard(
+            onTap: () async {
+              final messenger = ScaffoldMessenger.of(context);
+              final path = current?.savedPath;
+              final ok = await FileHandler.openFolder(filePath: path);
+              if (!ok && mounted && path != null) {
+                messenger.showSnackBar(
+                  SnackBar(
+                    content: Text('Saved to: $path'),
+                    action: SnackBarAction(
+                      label: 'Copy Path',
+                      onPressed: () {
+                        Clipboard.setData(ClipboardData(text: path));
+                      },
+                    ),
+                  ),
+                );
+              }
+            },
+            child: Container(
+              width: double.infinity,
+              height: 52,
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: Colors.black.withValues(alpha: 0.08), width: 1.2),
+              ),
+              child: const Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.folder_open_rounded, color: AppColors.primary, size: 20),
+                  SizedBox(width: 8),
+                  Text(
+                    'OPEN IN FILE MANAGER',
+                    style: TextStyle(color: AppColors.primary, fontWeight: FontWeight.w700),
                   ),
                 ],
               ),

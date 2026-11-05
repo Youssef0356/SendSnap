@@ -5,6 +5,7 @@ import '../providers/device_provider.dart';
 import '../config/constants.dart';
 import '../services/rating_service.dart';
 import '../services/tray_and_window_service.dart';
+import '../services/file_handler.dart';
 import '../widgets/glass_container.dart';
 import '../widgets/bouncing_card.dart';
 import '../widgets/ambient_background.dart';
@@ -97,6 +98,89 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             ),
                           ),
                           const SizedBox(height: 16),
+
+                          // Storage & Downloads Folder
+                          GlassContainer(
+                            blur: 20,
+                            opacity: 0.75,
+                            borderRadius: 24,
+                            padding: const EdgeInsets.all(18),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text(
+                                  'STORAGE & DOWNLOADS',
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.w800,
+                                    color: AppColors.primary,
+                                    fontSize: 11,
+                                    letterSpacing: 1.0,
+                                  ),
+                                ),
+                                const SizedBox(height: 14),
+                                Row(
+                                  children: [
+                                    Container(
+                                      padding: const EdgeInsets.all(10),
+                                      decoration: BoxDecoration(
+                                        shape: BoxShape.circle,
+                                        color: AppColors.primary.withValues(alpha: 0.12),
+                                      ),
+                                      child: const Icon(Icons.folder_rounded, color: AppColors.primary, size: 20),
+                                    ),
+                                    const SizedBox(width: 14),
+                                    const Expanded(
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            'SendSnap Folder',
+                                            style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.textPrimary),
+                                          ),
+                                          SizedBox(height: 2),
+                                          Text(
+                                            'Downloads/SendSnap',
+                                            style: TextStyle(fontSize: 11, color: AppColors.textSecondary),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                    BouncingCard(
+                                      onTap: () async {
+                                        final messenger = ScaffoldMessenger.of(context);
+                                        final ok = await FileHandler.openFolder();
+                                        if (!ok && mounted) {
+                                          final dir = await FileHandler.getDownloadsDirectory();
+                                          if (!mounted) return;
+                                          messenger.showSnackBar(
+                                            SnackBar(content: Text('Folder path: ${dir.path}')),
+                                          );
+                                        }
+                                      },
+                                      child: Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                                        decoration: BoxDecoration(
+                                          gradient: AppColors.primaryGradient,
+                                          borderRadius: BorderRadius.circular(14),
+                                        ),
+                                        child: const Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            Icon(Icons.folder_open_rounded, size: 14, color: Colors.white),
+                                            SizedBox(width: 6),
+                                            Text(
+                                              'Open',
+                                              style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 12),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ),
+                          ),
 
                           // Desktop & Startup Settings (Windows / macOS / Linux)
                           if (TrayAndWindowService.isDesktop) ...[
@@ -333,7 +417,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           const SizedBox(height: 28),
                           const Center(
                             child: Text(
-                              'SendSnap v2.2.1',
+                              'SendSnap v2.2.2',
                               style: TextStyle(
                                 color: AppColors.textSecondary,
                                 fontSize: 13,

@@ -36,6 +36,10 @@ void main() {
     final vidItem = items.firstWhere((i) => i.name == 'clip.mp4');
     expect(vidItem.isVideo, isTrue);
 
+    // Verify recent category loads without errors
+    final recentItems = await LocalStorageService.getItems(category: StorageCategory.recent);
+    expect(recentItems, isA<List<LocalItem>>());
+
     tempDir.deleteSync(recursive: true);
   });
 }
