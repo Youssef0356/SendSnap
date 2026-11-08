@@ -102,22 +102,7 @@
                 <data android:mimeType="*/*" />
             </intent-filter>
 
-            <!-- 5. "Send with" / "Open with" (ACTION_VIEW) for photos and files -->
-            <intent-filter>
-                <action android:name="android.intent.action.VIEW" />
-                <category android:name="android.intent.category.DEFAULT" />
-                <data android:mimeType="image/*" />
-            </intent-filter>
-            <intent-filter>
-                <action android:name="android.intent.action.VIEW" />
-                <category android:name="android.intent.category.DEFAULT" />
-                <data android:mimeType="video/*" />
-            </intent-filter>
-            <intent-filter>
-                <action android:name="android.intent.action.VIEW" />
-                <category android:name="android.intent.category.DEFAULT" />
-                <data android:mimeType="*/*" />
-            </intent-filter>
+
         </activity>
         <meta-data
             android:name="flutterEmbedding"
@@ -135,6 +120,8 @@
         </provider>
     </application>
     <queries>
+
+        <package android:name="com.the356company.pagelit" />
         <intent>
             <action android:name="android.intent.action.PROCESS_TEXT"/>
             <data android:mimeType="text/plain"/>

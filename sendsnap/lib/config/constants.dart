@@ -61,4 +61,6 @@ class AppConstants {
   static const String websiteUrl = 'https://youssef0356.github.io/sendsnap_website/';
   static const String githubUrl = 'https://github.com/Youssef0356/SendSnap';
   static const String feedbackEmail = 'nejiyoussef081@gmail.com';
+  static const String pagelitPackageName = 'com.the356company.pagelit';
+  static const String pagelitPlayStoreUrl = 'https://play.google.com/store/apps/details?id=com.the356company.pagelit';
 }

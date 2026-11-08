@@ -1,10 +1,9 @@
 import 'dart:io';
-import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart' as path_provider;
 import 'package:path/path.dart' as p;
 import 'package:open_filex/open_filex.dart';
-
 class FileHandler {
   static const _channel = MethodChannel('com.the356company.sendsnap/file_utils');
   /// Gets a safe directory to store downloaded files.
@@ -15,7 +14,6 @@ class FileHandler {
     } catch (e) {
       debugPrint('[FileHandler] Error getting platform downloads dir: $e');
     }
-
     if (baseDir == null) {
       try {
         baseDir = await path_provider.getApplicationDocumentsDirectory();
@@ -23,14 +21,12 @@ class FileHandler {
         baseDir = Directory(p.join(Directory.systemTemp.path, 'SendSnapDownloads'));
       }
     }
-
     final dir = Directory(p.join(baseDir.path, 'SendSnap'));
     if (!await dir.exists()) {
       await dir.create(recursive: true);
     }
     return dir;
   }
-
   static Future<Directory?> getDownloadsDirectoryPlatform() async {
     if (Platform.isAndroid) {
       final publicDownload = Directory('/storage/emulated/0/Download');
@@ -48,7 +44,6 @@ class FileHandler {
       return null;
     }
   }
-
   /// Generates a unique destination path in the SendSnap downloads folder.
   static Future<String> getAvailableDestinationPath(String fileName) async {
     final destDir = await getDownloadsDirectory();
@@ -62,7 +57,6 @@ class FileHandler {
     }
     return destPath;
   }
-
   /// Moves or copies a temp file to downloads.
   static Future<File?> moveFileToDownloads(String sourcePath, String fileName) async {
     try {
@@ -72,7 +66,6 @@ class FileHandler {
         debugPrint('[FileHandler] Source file does not exist: $sourcePath');
         return null;
       }
-
       final destFile = await sourceFile.copy(destPath);
       try {
         await sourceFile.delete();
@@ -83,14 +76,12 @@ class FileHandler {
       return null;
     }
   }
-
   static String formatFileSize(int bytes) {
     if (bytes < 1024) return '$bytes B';
     if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(1)} KB';
     if (bytes < 1024 * 1024 * 1024) return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
     return '${(bytes / (1024 * 1024 * 1024)).toStringAsFixed(1)} GB';
   }
-
   /// Opens a file using the system default application via OpenFilex.
   static Future<bool> openFile(String path) async {
     try {
@@ -101,7 +92,6 @@ class FileHandler {
       return false;
     }
   }
-
   /// Opens the system file manager at the SendSnap downloads folder,
   /// or at a specific folder or highlights a file.
   static Future<bool> openFolder({String? folderPath, String? filePath}) async {
@@ -115,12 +105,10 @@ class FileHandler {
         final dir = await getDownloadsDirectory();
         targetPath = dir.path;
       }
-
       final dir = Directory(targetPath);
       if (!await dir.exists()) {
         await dir.create(recursive: true);
       }
-
       // Android: Native intent via method channel
       if (Platform.isAndroid) {
         try {
@@ -162,7 +150,6 @@ class FileHandler {
           debugPrint('[FileHandler] Linux xdg-open error: $e');
         }
       }
-
       // Universal fallback
       final result = await OpenFilex.open(targetPath);
       return result.type == ResultType.done;
@@ -171,7 +158,55 @@ class FileHandler {
       return false;
     }
   }
-
   /// Opens the system file manager at the SendSnap downloads folder.
   static Future<bool> browseDownloadsFolder() => openFolder();
+  /// Resolves an Android content:// URI or external URI to a local readable file path.
+  static Future<String?> resolveContentUri(String uri) async {
+    if (!Platform.isAndroid || !uri.startsWith('content://')) return uri;
+    try {
+      final path = await _channel.invokeMethod<String>('resolveUri', {'uri': uri});
+      return path;
+    } catch (e) {
+      debugPrint('[FileHandler] Failed to resolve URI $uri: $e');
+      return null;
+    }
+  }
+  /// Opens Android DocumentsUI directly at the specified folder or downloads folder.
+  static Future<bool> openSystemFileManager([String? path]) async {
+    try {
+      final targetPath = path ?? (await getDownloadsDirectory()).path;
+      if (Platform.isAndroid) {
+        final success = await _channel.invokeMethod<bool>('openDocumentsUI', {'path': targetPath});
+        if (success == true) return true;
+      }
+      return openFolder(folderPath: targetPath);
+    } catch (e) {
+      debugPrint('[FileHandler] openSystemFileManager error: $e');
+      return openFolder(folderPath: path);
+    }
+  }
+  /// Opens the device manufacturer (OEM) file manager (Xiaomi, Samsung, etc.).
+  static Future<bool> openOemFileManager([String? path]) async {
+    try {
+      final targetPath = path ?? (await getDownloadsDirectory()).path;
+      if (Platform.isAndroid) {
+        final success = await _channel.invokeMethod<bool>('openOemFileManager', {'path': targetPath});
+        if (success == true) return true;
+      }
+      return openFolder(folderPath: targetPath);
+    } catch (e) {
+      debugPrint('[FileHandler] openOemFileManager error: $e');
+      return openFolder(folderPath: path);
+    }
+  }
+  /// Interactive folder opener:
+  /// Invokes native file manager / system intent resolver ("Just once" or "Always" dialog on Android,
+  /// Explorer/Finder on Desktop).
+  static Future<bool> openFolderChoice(
+    BuildContext context, {
+    String? folderPath,
+    String? filePath,
+  }) {
+    return openFolder(folderPath: folderPath, filePath: filePath);
+  }
 }

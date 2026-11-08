@@ -133,12 +133,15 @@ class MainActivity : FlutterActivity() {
 
     private fun queryMediaStoreFiles(type: String): List<Map<String, Any>> {
         val list = mutableListOf<Map<String, Any>>()
-        val isRecent = type.lowercase() == "recents" || type.lowercase() == "recent"
-        val uri = when (type.lowercase()) {
-            "videos", "video" -> MediaStore.Video.Media.EXTERNAL_CONTENT_URI
-            "photos", "images", "photo", "image" -> MediaStore.Images.Media.EXTERNAL_CONTENT_URI
-            "audio" -> MediaStore.Audio.Media.EXTERNAL_CONTENT_URI
-            "recents", "recent" -> MediaStore.Files.getContentUri("external")
+        val typeLower = type.lowercase()
+        val isRecent = typeLower == "recents" || typeLower == "recent"
+        val isDocs = typeLower == "documents" || typeLower == "docs" || typeLower == "document" || typeLower == "doc"
+
+        val uri = when {
+            typeLower in listOf("videos", "video") -> MediaStore.Video.Media.EXTERNAL_CONTENT_URI
+            typeLower in listOf("photos", "images", "photo", "image") -> MediaStore.Images.Media.EXTERNAL_CONTENT_URI
+            typeLower in listOf("audio") -> MediaStore.Audio.Media.EXTERNAL_CONTENT_URI
+            isRecent || isDocs -> MediaStore.Files.getContentUri("external")
             else -> null
         } ?: return list
 
@@ -150,7 +153,20 @@ class MainActivity : FlutterActivity() {
             MediaStore.MediaColumns.DATE_MODIFIED
         )
 
-        val selection = if (isRecent) "${MediaStore.MediaColumns.SIZE} > 0" else null
+        val selection = when {
+            isRecent -> "${MediaStore.Files.FileColumns.MEDIA_TYPE} != ${MediaStore.Files.FileColumns.MEDIA_TYPE_NONE} AND ${MediaStore.MediaColumns.SIZE} > 0"
+            isDocs -> {
+                val docExtensions = listOf(
+                    "%.pdf", "%.doc", "%.docx", "%.xls", "%.xlsx", "%.ppt", "%.pptx",
+                    "%.txt", "%.csv", "%.rtf", "%.zip", "%.rar", "%.7z", "%.apk"
+                )
+                val extConditions = docExtensions.joinToString(" OR ") {
+                    "${MediaStore.MediaColumns.DISPLAY_NAME} LIKE '$it'"
+                }
+                "${MediaStore.MediaColumns.SIZE} > 0 AND ($extConditions)"
+            }
+            else -> null
+        }
         val sortOrder = "${MediaStore.MediaColumns.DATE_MODIFIED} DESC LIMIT 150"
         try {
             contentResolver.query(uri, projection, selection, null, sortOrder)?.use { cursor ->
@@ -168,11 +184,7 @@ class MainActivity : FlutterActivity() {
                     val mod = if (modCol != -1) cursor.getLong(modCol) * 1000L else System.currentTimeMillis()
 
                     val finalName = if (!name.isNullOrBlank()) name else (if (path != null) File(path).name else "file_$id")
-                    val finalPath = if (!path.isNullOrBlank() && File(path).exists()) {
-                        path
-                    } else {
-                        ContentUris.withAppendedId(uri, id).toString()
-                    }
+                    val finalPath = if (!path.isNullOrBlank()) path else ContentUris.withAppendedId(uri, id).toString()
 
                     list.add(
                         mapOf(
@@ -190,15 +202,11 @@ class MainActivity : FlutterActivity() {
         return list
     }
 
-    private fun openFileManagerAtFolder(folderPath: String, filePath: String?): Boolean {
+    private fun openDocumentsUI(folderPath: String): Boolean {
         val folder = File(folderPath)
         if (!folder.exists()) {
-            try {
-                folder.mkdirs()
-            } catch (_: Exception) {}
+            try { folder.mkdirs() } catch (_: Exception) {}
         }
-
-        // 1. Try DocumentsContract direct Document URI pointing to SendSnap folder in Downloads
         try {
             val externalStoragePath = Environment.getExternalStorageDirectory().absolutePath
             val relativePath = if (folderPath.startsWith(externalStoragePath)) {
@@ -211,44 +219,24 @@ class MainActivity : FlutterActivity() {
 
             val intent = Intent(Intent.ACTION_VIEW).apply {
                 setDataAndType(uri, DocumentsContract.Document.MIME_TYPE_DIR)
+                putExtra(DocumentsContract.EXTRA_INITIAL_URI, uri)
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             }
-            if (intent.resolveActivity(packageManager) != null) {
+
+            val resolvedActivities = packageManager.queryIntentActivities(intent, 0)
+                .filter { it.activityInfo.packageName != applicationContext.packageName }
+
+            val docUiActivity = resolvedActivities.firstOrNull { it.activityInfo.packageName == "com.android.documentsui" }
+                ?: resolvedActivities.firstOrNull()
+
+            if (docUiActivity != null) {
+                intent.setPackage(docUiActivity.activityInfo.packageName)
                 startActivity(intent)
                 return true
             }
         } catch (_: Exception) {}
 
-        // 2. Try FileProvider URI with directory / folder mime types
-        try {
-            val contentUri = FileProvider.getUriForFile(
-                this,
-                "${applicationContext.packageName}.fileprovider",
-                folder
-            )
-            val mimeTypes = arrayOf(
-                "resource/folder",
-                DocumentsContract.Document.MIME_TYPE_DIR,
-                "vnd.android.document/directory",
-                "*/*"
-            )
-            for (mime in mimeTypes) {
-                try {
-                    val intent = Intent(Intent.ACTION_VIEW).apply {
-                        setDataAndType(contentUri, mime)
-                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                    }
-                    if (intent.resolveActivity(packageManager) != null) {
-                        startActivity(intent)
-                        return true
-                    }
-                } catch (_: Exception) {}
-            }
-        } catch (_: Exception) {}
-
-        // 3. Try standard DownloadManager ACTION_VIEW_DOWNLOADS
         try {
             val dmIntent = Intent(DownloadManager.ACTION_VIEW_DOWNLOADS).apply {
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
@@ -259,43 +247,101 @@ class MainActivity : FlutterActivity() {
             }
         } catch (_: Exception) {}
 
-        // 4. Try OEM File Managers (Google Files, Samsung My Files, Xiaomi, OnePlus, Oppo, etc.)
+        return false
+    }
+
+    private fun openOemFileManager(folderPath: String): Boolean {
+        val folder = File(folderPath)
+        if (!folder.exists()) {
+            try { folder.mkdirs() } catch (_: Exception) {}
+        }
+
         val knownPackages = arrayOf(
+            "com.mi.android.globalFileexplorer",   // Xiaomi / Redmi / Poco
             "com.google.android.apps.nfiles",      // Files by Google
             "com.sec.android.app.myfiles",         // Samsung My Files
-            "com.mi.android.globalFileexplorer",   // Xiaomi File Manager
-            "com.oneplus.filemanager",             // OnePlus File Manager
+            "com.oneplus.filemanager",             // OnePlus
             "com.coloros.filemanager",             // Oppo / Realme
-            "com.huawei.hidisk",                   // Huawei Files
-            "com.android.documentsui"              // AOSP Files
+            "com.huawei.hidisk"                    // Huawei
         )
+
         for (pkg in knownPackages) {
             try {
-                val launchIntent = packageManager.getLaunchIntentForPackage(pkg)
-                if (launchIntent != null) {
-                    launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                    startActivity(launchIntent)
-                    return true
-                }
+                val launchIntent = packageManager.getLaunchIntentForPackage(pkg) ?: continue
+                launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                launchIntent.putExtra("explorer_path", folderPath)
+                launchIntent.putExtra("path", folderPath)
+                launchIntent.putExtra("folder_path", folderPath)
+                launchIntent.putExtra("current_directory", folderPath)
+                launchIntent.putExtra("current_dir", folderPath)
+                launchIntent.putExtra("KEY_FOLDER_PATH", folderPath)
+                launchIntent.putExtra("start_dir", folderPath)
+                launchIntent.putExtra("root", folderPath)
+
+                try {
+                    val fileUri = FileProvider.getUriForFile(
+                        this,
+                        "${applicationContext.packageName}.fileprovider",
+                        folder
+                    )
+                    launchIntent.setDataAndType(fileUri, "resource/folder")
+                    launchIntent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                } catch (_: Exception) {}
+
+                startActivity(launchIntent)
+                return true
             } catch (_: Exception) {}
         }
 
-        // 5. Generic ACTION_VIEW fallback to external storage documents root
+        return openDocumentsUI(folderPath)
+    }
+
+    private fun openFileManagerAtFolder(folderPath: String, filePath: String?): Boolean {
+        val folder = File(folderPath)
+        if (!folder.exists()) {
+            try { folder.mkdirs() } catch (_: Exception) {}
+        }
+
+        // 1. Android System Intent Resolver ("Just once" / "Always") via ACTION_VIEW_DOWNLOADS
         try {
-            val genericIntent = Intent(Intent.ACTION_VIEW).apply {
-                setDataAndType(
-                    Uri.parse("content://com.android.externalstorage.documents/root/primary"),
-                    "vnd.android.document/root"
-                )
+            val dmIntent = Intent(DownloadManager.ACTION_VIEW_DOWNLOADS).apply {
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                putExtra("folder_path", folderPath)
+                putExtra("path", folderPath)
+                putExtra("explorer_path", folderPath)
             }
-            if (genericIntent.resolveActivity(packageManager) != null) {
-                startActivity(genericIntent)
+            if (dmIntent.resolveActivity(packageManager) != null) {
+                startActivity(dmIntent)
                 return true
             }
         } catch (_: Exception) {}
 
-        return false
+        // 2. DocumentsContract directory view without hardcoded package (allows system resolver)
+        try {
+            val externalStoragePath = Environment.getExternalStorageDirectory().absolutePath
+            val relativePath = if (folderPath.startsWith(externalStoragePath)) {
+                folderPath.removePrefix(externalStoragePath).trimStart('/')
+            } else {
+                "Download/SendSnap"
+            }
+            val docId = "primary:$relativePath"
+            val uri = DocumentsContract.buildDocumentUri("com.android.externalstorage.documents", docId)
+
+            val intent = Intent(Intent.ACTION_VIEW).apply {
+                setDataAndType(uri, DocumentsContract.Document.MIME_TYPE_DIR)
+                putExtra(DocumentsContract.EXTRA_INITIAL_URI, uri)
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            if (intent.resolveActivity(packageManager) != null) {
+                startActivity(intent)
+                return true
+            }
+        } catch (_: Exception) {}
+
+        // 3. Fallbacks
+        if (openDocumentsUI(folderPath)) return true
+        return openOemFileManager(folderPath)
     }
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
@@ -303,6 +349,46 @@ class MainActivity : FlutterActivity() {
 
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL).setMethodCallHandler { call, result ->
             when (call.method) {
+                "isPackageInstalled" -> {
+                    val pkg = call.argument<String>("package") ?: ""
+                    val installed = try {
+                        packageManager.getPackageInfo(pkg, 0)
+                        true
+                    } catch (_: Exception) {
+                        false
+                    }
+                    result.success(installed)
+                }
+                "openFileWithPackage" -> {
+                    val path = call.argument<String>("path")
+                    val pkg = call.argument<String>("package") ?: ""
+                    if (path == null) {
+                        result.error("INVALID_ARGS", "path is required", null)
+                        return@setMethodCallHandler
+                    }
+                    try {
+                        val file = File(path)
+                        val extension = MimeTypeMap.getFileExtensionFromUrl(file.name)
+                        val mimeType = MimeTypeMap.getSingleton().getMimeTypeFromExtension(extension) ?: "*/*"
+                        val uri = FileProvider.getUriForFile(
+                            this,
+                            "${applicationContext.packageName}.fileprovider",
+                            file
+                        )
+                        val intent = Intent(Intent.ACTION_VIEW).apply {
+                            setDataAndType(uri, mimeType)
+                            if (pkg.isNotEmpty()) {
+                                setPackage(pkg)
+                            }
+                            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        }
+                        startActivity(intent)
+                        result.success(true)
+                    } catch (e: Exception) {
+                        result.error("OPEN_ERROR", "Could not open file with package: ${e.message}", null)
+                    }
+                }
                 "getInitialSharedFiles" -> {
                     val list = ArrayList(sharedFilePaths)
                     sharedFilePaths.clear()
@@ -316,6 +402,19 @@ class MainActivity : FlutterActivity() {
                             result.success(items)
                         }
                     }.start()
+                }
+                "resolveUri" -> {
+                    val uriStr = call.argument<String>("uri")
+                    if (uriStr != null) {
+                        Thread {
+                            val resolved = resolveUriToFilePath(Uri.parse(uriStr))
+                            runOnUiThread {
+                                result.success(resolved)
+                            }
+                        }.start()
+                    } else {
+                        result.error("INVALID_ARGS", "uri is required", null)
+                    }
                 }
                 "copyFromContentUri" -> {
                     val contentUri = call.argument<String>("uri")
@@ -342,6 +441,26 @@ class MainActivity : FlutterActivity() {
                         result.success(destFile.absolutePath)
                     } catch (e: Exception) {
                         result.error("COPY_ERROR", "Failed to copy from content URI: ${e.message}", null)
+                    }
+                }
+                "openDocumentsUI" -> {
+                    val path = call.argument<String>("path")
+                        ?: (Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS).absolutePath + "/SendSnap")
+                    try {
+                        val opened = openDocumentsUI(path)
+                        result.success(opened)
+                    } catch (e: Exception) {
+                        result.error("DOCUMENTS_UI_ERROR", "Could not open DocumentsUI: ${e.message}", null)
+                    }
+                }
+                "openOemFileManager" -> {
+                    val path = call.argument<String>("path")
+                        ?: (Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS).absolutePath + "/SendSnap")
+                    try {
+                        val opened = openOemFileManager(path)
+                        result.success(opened)
+                    } catch (e: Exception) {
+                        result.error("OEM_FM_ERROR", "Could not open OEM file manager: ${e.message}", null)
                     }
                 }
                 "openFileManager" -> {
