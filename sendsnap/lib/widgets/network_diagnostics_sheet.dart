@@ -4,6 +4,8 @@ import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../config/constants.dart';
 import '../providers/device_provider.dart';
+import '../l10n/app_localizations.dart';
+import '../services/bidi_helper.dart';
 import 'bouncing_card.dart';
 
 /// Modal bottom sheet presenting clear network diagnostics, connection status,
@@ -24,6 +26,7 @@ class NetworkDiagnosticsSheet extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     final ip = devProv.localIp;
     final isConnected = ip != null && ip != '0.0.0.0' && ip.isNotEmpty;
     final maxHeight = MediaQuery.of(context).size.height * 0.85;
@@ -81,13 +84,13 @@ class NetworkDiagnosticsSheet extends StatelessWidget {
                         ),
                       ),
                       const SizedBox(width: 14),
-                      const Expanded(
+                      Expanded(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              'Network Diagnostics',
-                              style: TextStyle(
+                              l10n?.networkDiagTitle ?? 'Network Diagnostics',
+                              style: const TextStyle(
                                 fontSize: 20,
                                 fontWeight: FontWeight.w800,
                                 letterSpacing: -0.4,
@@ -95,8 +98,8 @@ class NetworkDiagnosticsSheet extends StatelessWidget {
                               ),
                             ),
                             Text(
-                              'Local Wi-Fi & P2P connection status',
-                              style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
+                              l10n?.networkDiagSubtitle ?? 'Local Wi-Fi & P2P connection status',
+                              style: const TextStyle(fontSize: 12, color: AppColors.textSecondary),
                             ),
                           ],
                         ),
@@ -145,7 +148,9 @@ class NetworkDiagnosticsSheet extends StatelessWidget {
                           ),
                           const SizedBox(width: 8),
                           Text(
-                            isConnected ? 'Local IP Address' : 'No Local Network',
+                            isConnected
+                                ? (l10n?.networkLocalIp ?? 'Local IP Address')
+                                : (l10n?.networkNotConnected ?? 'No Local Network'),
                             style: const TextStyle(
                               fontSize: 13,
                               fontWeight: FontWeight.w700,
@@ -194,9 +199,9 @@ class NetworkDiagnosticsSheet extends StatelessWidget {
                   if (isConnected) ...[
                     const SizedBox(height: 6),
                     Align(
-                      alignment: Alignment.centerLeft,
+                      alignment: AlignmentDirectional.centerStart,
                       child: Text(
-                        ip,
+                        BidiHelper.isolate(ip),
                         style: const TextStyle(
                           fontSize: 18,
                           fontWeight: FontWeight.w800,

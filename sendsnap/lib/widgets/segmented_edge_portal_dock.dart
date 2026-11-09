@@ -54,22 +54,23 @@ class _SegmentedEdgePortalDockState extends State<SegmentedEdgePortalDock>
   Widget build(BuildContext context) {
     if (widget.devices.isEmpty) return const SizedBox.shrink();
 
+    final isRtl = Directionality.of(context) == TextDirection.rtl;
     final displayDevices = widget.devices.take(4).toList();
 
     return Align(
-      alignment: Alignment.centerRight,
+      alignment: AlignmentDirectional.centerEnd,
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.end,
         children: displayDevices.map((device) {
           final isHovered = _hoveredDeviceId == device.id;
-          return _buildFeatheredPortal(device, isHovered, displayDevices.length);
+          return _buildFeatheredPortal(device, isHovered, displayDevices.length, isRtl);
         }).toList(),
       ),
     );
   }
 
-  Widget _buildFeatheredPortal(NearbyDevice device, bool isHovered, int totalCount) {
+  Widget _buildFeatheredPortal(NearbyDevice device, bool isHovered, int totalCount, bool isRtl) {
     final double portalHeight = totalCount == 1
         ? 280.0
         : totalCount == 2
@@ -118,7 +119,7 @@ class _SegmentedEdgePortalDockState extends State<SegmentedEdgePortalDock>
               width: glowWidth,
               height: portalHeight,
               child: Stack(
-                alignment: Alignment.centerRight,
+                alignment: AlignmentDirectional.centerEnd,
                 children: [
                   // 1. Organic Feathered Gaussian Aura Bleed (Completely dissolved in all directions, no hard lines or cutoffs)
                   Positioned.fill(
@@ -127,13 +128,14 @@ class _SegmentedEdgePortalDockState extends State<SegmentedEdgePortalDock>
                         color: devColor,
                         alpha: baseAlpha,
                         active: active,
+                        isRtl: isRtl,
                       ),
                     ),
                   ),
 
                   // 2. Floating Ethereal Content with Fancy Light Typography
-                  Positioned(
-                    right: 12,
+                  PositionedDirectional(
+                    end: 12,
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
                       crossAxisAlignment: CrossAxisAlignment.center,
@@ -155,7 +157,7 @@ class _SegmentedEdgePortalDockState extends State<SegmentedEdgePortalDock>
 
                         // Fancy Light Rotated Typography
                         RotatedBox(
-                          quarterTurns: 3,
+                          quarterTurns: isRtl ? 1 : 3,
                           child: Text(
                             device.name.toUpperCase(),
                             maxLines: 1,
@@ -163,8 +165,8 @@ class _SegmentedEdgePortalDockState extends State<SegmentedEdgePortalDock>
                             style: TextStyle(
                               color: Colors.white.withValues(alpha: active ? 1.0 : 0.88),
                               fontSize: 10,
-                              fontWeight: FontWeight.w300, // Elegant light font
-                              letterSpacing: 2.4,          // Spaced luxury feel
+                              fontWeight: FontWeight.w300,
+                              letterSpacing: isRtl ? 0.0 : 2.4,
                               fontFeatures: const [FontFeature.enable('smcp')],
                               shadows: [
                                 Shadow(
@@ -216,17 +218,20 @@ class _FeatheredEdgeAuraPainter extends CustomPainter {
   final Color color;
   final double alpha;
   final bool active;
+  final bool isRtl;
 
   _FeatheredEdgeAuraPainter({
     required this.color,
     required this.alpha,
     required this.active,
+    this.isRtl = false,
   });
 
   @override
   void paint(Canvas canvas, Size size) {
     final double w = size.width;
     final double h = size.height;
+    final double centerX = isRtl ? 0.0 : w;
 
     // 1. Broad atmospheric outer Gaussian aura (smoothly dissipates in all directions)
     final outerBlur = active ? 46.0 : 28.0;
@@ -235,7 +240,7 @@ class _FeatheredEdgeAuraPainter extends CustomPainter {
       ..maskFilter = MaskFilter.blur(BlurStyle.normal, outerBlur);
 
     final outerOval = Rect.fromCenter(
-      center: Offset(w, h / 2),
+      center: Offset(centerX, h / 2),
       width: w * 2.0,
       height: h * 0.92,
     );
@@ -248,7 +253,7 @@ class _FeatheredEdgeAuraPainter extends CustomPainter {
       ..maskFilter = MaskFilter.blur(BlurStyle.normal, innerBlur);
 
     final innerOval = Rect.fromCenter(
-      center: Offset(w, h / 2),
+      center: Offset(centerX, h / 2),
       width: w * 1.25,
       height: h * 0.65,
     );
@@ -259,5 +264,6 @@ class _FeatheredEdgeAuraPainter extends CustomPainter {
   bool shouldRepaint(covariant _FeatheredEdgeAuraPainter oldDelegate) =>
       oldDelegate.color != color ||
       oldDelegate.alpha != alpha ||
-      oldDelegate.active != active;
+      oldDelegate.active != active ||
+      oldDelegate.isRtl != isRtl;
 }

@@ -95,7 +95,7 @@ class DiscoveryService {
 
   void _handleIncomingDatagram(Datagram datagram) {
     try {
-      final message = utf8.decode(datagram.data);
+      final message = utf8.decode(datagram.data, allowMalformed: true);
       final json = jsonDecode(message) as Map<String, dynamic>;
 
       if (json['protocol'] != protocolTag) return;

@@ -4,6 +4,8 @@ import 'package:flutter/services.dart';
 import 'package:path/path.dart' as p;
 import '../config/constants.dart';
 import '../services/file_handler.dart';
+import '../services/bidi_helper.dart';
+import '../l10n/app_localizations.dart';
 
 /// A multi-file tray container with individual draggable cards per file,
 /// support for dragging individual files, dragging the entire container to send all,
@@ -46,9 +48,10 @@ class _DraggableFileTokenState extends State<DraggableFileToken> {
   Widget build(BuildContext context) {
     if (widget.files.isEmpty) return const SizedBox.shrink();
 
+    final l10n = AppLocalizations.of(context);
     final count = widget.files.length;
     final totalBytes = _calculateTotalBytes();
-    final totalSizeFormatted = totalBytes > 0 ? FileHandler.formatFileSize(totalBytes) : '';
+    final totalSizeFormatted = totalBytes > 0 ? BidiHelper.isolate(FileHandler.formatFileSize(totalBytes)) : '';
 
     return Container(
       constraints: const BoxConstraints(maxWidth: 440),
@@ -77,7 +80,7 @@ class _DraggableFileTokenState extends State<DraggableFileToken> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           // Container Top Bar: Draggable Header ("DRAG ALL" master handle + actions)
-          _buildMasterHeader(count, totalSizeFormatted),
+          _buildMasterHeader(count, totalSizeFormatted, l10n),
 
           // Cards Row / Grid
           Padding(
@@ -106,8 +109,8 @@ class _DraggableFileTokenState extends State<DraggableFileToken> {
                 Flexible(
                   child: Text(
                     count > 1
-                        ? 'Drop file per file or drag header to send all'
-                        : 'Drag card to nearby device or right edge to send',
+                        ? (l10n?.homeDropHintMulti ?? 'Drop file per file or drag header to send all')
+                        : (l10n?.homeDropHintSingle ?? 'Drag card to nearby device or edge to send'),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
@@ -126,7 +129,7 @@ class _DraggableFileTokenState extends State<DraggableFileToken> {
   }
 
   /// The master drag handle across the container header
-  Widget _buildMasterHeader(int count, String totalSizeFormatted) {
+  Widget _buildMasterHeader(int count, String totalSizeFormatted, AppLocalizations? l10n) {
     final dragHandle = MouseRegion(
       cursor: _isMasterDragging ? SystemMouseCursors.grabbing : SystemMouseCursors.grab,
       child: Draggable<List<File>>(
@@ -139,7 +142,7 @@ class _DraggableFileTokenState extends State<DraggableFileToken> {
         onDragUpdate: (details) {
           widget.onDragUpdate?.call(
             details.globalPosition,
-            fileName: '$count files',
+            fileName: l10n != null ? l10n.homeFilesCount(count) : '$count files',
           );
         },
         onDragEnd: (details) {
@@ -160,9 +163,9 @@ class _DraggableFileTokenState extends State<DraggableFileToken> {
         ),
         childWhenDragging: Opacity(
           opacity: 0.4,
-          child: _buildMasterPill(count, totalSizeFormatted, isDragging: true),
+          child: _buildMasterPill(count, totalSizeFormatted, isDragging: true, l10n: l10n),
         ),
-        child: _buildMasterPill(count, totalSizeFormatted, isDragging: false),
+        child: _buildMasterPill(count, totalSizeFormatted, isDragging: false, l10n: l10n),
       ),
     );
 
@@ -184,14 +187,14 @@ class _DraggableFileTokenState extends State<DraggableFileToken> {
                   color: AppColors.primary.withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(12),
                 ),
-                child: const Row(
+                child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Icon(Icons.add_rounded, size: 14, color: AppColors.primary),
-                    SizedBox(width: 3),
+                    const Icon(Icons.add_rounded, size: 14, color: AppColors.primary),
+                    const SizedBox(width: 3),
                     Text(
-                      'ADD',
-                      style: TextStyle(
+                      l10n?.homeAddFiles ?? 'ADD',
+                      style: const TextStyle(
                         fontSize: 11,
                         fontWeight: FontWeight.w800,
                         color: AppColors.primary,
@@ -221,7 +224,8 @@ class _DraggableFileTokenState extends State<DraggableFileToken> {
     );
   }
 
-  Widget _buildMasterPill(int count, String totalSize, {required bool isDragging}) {
+  Widget _buildMasterPill(int count, String totalSize, {required bool isDragging, AppLocalizations? l10n}) {
+    final dragAllLabel = l10n?.homeDragAll ?? 'DRAG ALL';
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
       decoration: BoxDecoration(
@@ -244,7 +248,7 @@ class _DraggableFileTokenState extends State<DraggableFileToken> {
           const SizedBox(width: 4),
           Flexible(
             child: Text(
-              count > 1 ? 'DRAG ALL ($count)' : 'DRAG TO SEND',
+              count > 1 ? '$dragAllLabel ($count)' : dragAllLabel,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: TextStyle(

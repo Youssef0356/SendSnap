@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart' as path_provider;
 import 'package:path/path.dart' as p;
 import 'package:open_filex/open_filex.dart';
+import 'bidi_helper.dart';
 class FileHandler {
   static const _channel = MethodChannel('com.the356company.sendsnap/file_utils');
   /// Gets a safe directory to store downloaded files.
@@ -46,12 +47,13 @@ class FileHandler {
   }
   /// Generates a unique destination path in the SendSnap downloads folder.
   static Future<String> getAvailableDestinationPath(String fileName) async {
+    final cleanFileName = BidiHelper.sanitizeFileName(fileName);
     final destDir = await getDownloadsDirectory();
-    String destPath = p.join(destDir.path, fileName);
+    String destPath = p.join(destDir.path, cleanFileName.isEmpty ? 'unnamed_file' : cleanFileName);
     int counter = 1;
     while (await File(destPath).exists()) {
-      final ext = p.extension(fileName);
-      final base = p.basenameWithoutExtension(fileName);
+      final ext = p.extension(cleanFileName);
+      final base = p.basenameWithoutExtension(cleanFileName);
       destPath = p.join(destDir.path, '${base}_$counter$ext');
       counter++;
     }

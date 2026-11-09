@@ -5,3 +5,4 @@ sendsnap_website/
 *.jar
 *.pem
 *.jks
+sendsnap-credentials-backup/

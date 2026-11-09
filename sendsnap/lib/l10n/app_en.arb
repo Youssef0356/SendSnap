@@ -1,0 +1,139 @@
+{
+  "@@locale": "en",
+  "appTitle": "SendSnap",
+  "appTagline": "Fast Offline P2P File Sharing",
+
+  "navHome": "Home",
+  "navTransfers": "Transfers",
+  "navReceived": "Received Files",
+  "navSettings": "Settings",
+
+  "homeRadarSearching": "Looking for nearby devices...",
+  "homeRadarReady": "Ready to send and receive",
+  "homeTroubleshoot": "Troubleshoot",
+  "homeNoDevicesFound": "No devices found yet",
+  "homeNoDevicesHint": "Ensure SendSnap is open on the other device and connected to the same Wi-Fi or hotspot.",
+  "homeConnectManual": "Connect by IP",
+  "homeScanQr": "Scan QR",
+  "homeDropHintSingle": "Drag card to nearby device or edge to send",
+  "homeDropHintMulti": "Drop file per file or drag header to send all",
+  "homeDragAll": "DRAG ALL",
+  "homeAddFiles": "ADD",
+  "homeFilesCount": "{count, plural, =0{No files} =1{1 file} other{{count} files}}",
+  "@homeFilesCount": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+  "homeEdgePortalHint": "Push files towards screen edge to send",
+  "homeDropToShare": "Drop to share",
+  "homeSendingViaPortal": "Sending via Edge Portal...",
+
+  "transferTitle": "Transfers",
+  "transferNoActive": "No active transfers",
+  "transferConnecting": "Connecting to {deviceName}...",
+  "@transferConnecting": {
+    "placeholders": {
+      "deviceName": { "type": "String" }
+    }
+  },
+  "transferSending": "Sending {fileName}...",
+  "@transferSending": {
+    "placeholders": {
+      "fileName": { "type": "String" }
+    }
+  },
+  "transferReceiving": "Receiving {fileName}...",
+  "@transferReceiving": {
+    "placeholders": {
+      "fileName": { "type": "String" }
+    }
+  },
+  "transferCompleted": "Transfer completed successfully",
+  "transferFailed": "Transfer failed",
+  "transferCanceled": "Transfer canceled",
+  "transferSpeed": "{speed}/s",
+  "@transferSpeed": {
+    "placeholders": {
+      "speed": { "type": "String" }
+    }
+  },
+  "transferRemaining": "{time} remaining",
+  "@transferRemaining": {
+    "placeholders": {
+      "time": { "type": "String" }
+    }
+  },
+  "transferViewFiles": "View Received Files",
+  "transferCancel": "Cancel",
+  "transferRetry": "Retry",
+
+  "receivedTitle": "Received Files",
+  "receivedSearchHint": "Search received files...",
+  "receivedNoFiles": "No files received yet",
+  "receivedNoFilesHint": "Files you receive from nearby devices will show up here.",
+  "receivedOpenFolder": "Open Folder",
+  "receivedDeleteTitle": "Delete File?",
+  "receivedDeleteConfirm": "Are you sure you want to delete \"{fileName}\"? This cannot be undone.",
+  "@receivedDeleteConfirm": {
+    "placeholders": {
+      "fileName": { "type": "String" }
+    }
+  },
+  "receivedFilterAll": "All",
+  "receivedFilterPhotos": "Photos",
+  "receivedFilterVideos": "Videos",
+  "receivedFilterDocs": "Documents",
+
+  "settingsTitle": "Settings",
+  "settingsDeviceName": "DEVICE DISPLAY NAME",
+  "settingsDeviceNameHint": "Enter your device name",
+  "settingsLanguage": "APP LANGUAGE",
+  "settingsLanguageSystem": "System Default",
+  "settingsStorageTitle": "STORAGE & DOWNLOADS",
+  "settingsSendSnapFolder": "SendSnap Folder",
+  "settingsOpen": "Open",
+  "settingsWindowsSettings": "WINDOWS & TASKBAR SETTINGS",
+  "settingsLaunchStartup": "Launch on Windows Startup",
+  "settingsLaunchStartupDesc": "Start SendSnap automatically in the background on PC boot",
+  "settingsTaskbarTray": "Taskbar System Tray Icon",
+  "settingsTaskbarTrayDesc": "Closing the window hides SendSnap to the tray so you can always receive files",
+  "settingsTrayEnabled": "ENABLED",
+  "settingsRateApp": "Rate SendSnap",
+  "settingsRateAppDesc": "Leave a review to support continuous development",
+  "settingsGetDesktop": "Get SendSnap for Desktop",
+  "settingsGetDesktopDesc": "Transfer gigabytes between PC and Android at 100 MB/s",
+  "settingsFeedback": "Send Feedback",
+  "settingsFeedbackDesc": "Feature suggestions and bug reports directly to the team",
+  "settingsVersion": "SendSnap Version",
+
+  "rateEnjoyingTitle": "Enjoying SendSnap?",
+  "rateEnjoyingDesc": "If you love ultra-fast offline file sharing, please take a moment to rate us on the {storeName}!",
+  "@rateEnjoyingDesc": {
+    "placeholders": {
+      "storeName": { "type": "String" }
+    }
+  },
+  "rateSubmit": "Rate on {storeName}",
+  "@rateSubmit": {
+    "placeholders": {
+      "storeName": { "type": "String" }
+    }
+  },
+  "rateFeedbackInstead": "Send Feedback",
+  "rateLater": "Maybe Later",
+
+  "networkDiagTitle": "Network Diagnostics",
+  "networkDiagSubtitle": "Local Wi-Fi & P2P connection status",
+  "networkLocalIp": "Local IP Address",
+  "networkConnected": "Connected",
+  "networkNotConnected": "Not Connected",
+  "networkHotspotTip": "Tip: For maximum speed (up to 100 MB/s), turn on your phone's Personal Hotspot and connect your PC.",
+
+  "actionCancel": "Cancel",
+  "actionDelete": "Delete",
+  "actionConfirm": "Confirm",
+  "actionClose": "Close",
+  "actionSave": "Save",
+  "actionDone": "Done"
+}

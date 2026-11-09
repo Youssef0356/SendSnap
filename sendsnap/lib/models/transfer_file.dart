@@ -1,4 +1,5 @@
 import 'device.dart';
+import '../services/bidi_helper.dart';
 
 enum FileTransferStatus { waiting, transferring, completed, failed }
 
@@ -56,12 +57,17 @@ class TransferFile {
   }
 
   String get formattedSize {
-    if (size < 1024) return '$size B';
-    if (size < 1024 * 1024) return '${(size / 1024).toStringAsFixed(1)} KB';
-    if (size < 1024 * 1024 * 1024) {
-      return '${(size / (1024 * 1024)).toStringAsFixed(1)} MB';
+    final String raw;
+    if (size < 1024) {
+      raw = '$size B';
+    } else if (size < 1024 * 1024) {
+      raw = '${(size / 1024).toStringAsFixed(1)} KB';
+    } else if (size < 1024 * 1024 * 1024) {
+      raw = '${(size / (1024 * 1024)).toStringAsFixed(1)} MB';
+    } else {
+      raw = '${(size / (1024 * 1024 * 1024)).toStringAsFixed(1)} GB';
     }
-    return '${(size / (1024 * 1024 * 1024)).toStringAsFixed(1)} GB';
+    return BidiHelper.isolate(raw);
   }
 }
 

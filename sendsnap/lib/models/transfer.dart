@@ -1,3 +1,5 @@
+import '../services/bidi_helper.dart';
+
 enum TransferStatus { pending, inProgress, completed, failed, cancelled }
 
 class FileTransfer {
@@ -28,9 +30,15 @@ class FileTransfer {
   double get progress => fileSize == 0 ? 0 : (transferredBytes / fileSize).clamp(0.0, 1.0);
 
   String get formattedSpeed {
-    if (speed < 1024) return '${speed.toStringAsFixed(0)} B/s';
-    if (speed < 1024 * 1024) return '${(speed / 1024).toStringAsFixed(1)} KB/s';
-    return '${(speed / (1024 * 1024)).toStringAsFixed(1)} MB/s';
+    final String raw;
+    if (speed < 1024) {
+      raw = '${speed.toStringAsFixed(0)} B/s';
+    } else if (speed < 1024 * 1024) {
+      raw = '${(speed / 1024).toStringAsFixed(1)} KB/s';
+    } else {
+      raw = '${(speed / (1024 * 1024)).toStringAsFixed(1)} MB/s';
+    }
+    return BidiHelper.isolate(raw);
   }
 
   FileTransfer copyWith({
@@ -74,7 +82,7 @@ class FileTransfer {
 
   factory FileTransfer.fromJson(Map<String, dynamic> json) => FileTransfer(
     id: json['id'] as String,
-    fileName: json['fileName'] as String,
+    fileName: BidiHelper.sanitizeFileName(json['fileName'] as String),
     fileSize: json['fileSize'] as int,
     transferredBytes: json['transferredBytes'] as int? ?? 0,
     status: TransferStatus.values[json['status'] as int],

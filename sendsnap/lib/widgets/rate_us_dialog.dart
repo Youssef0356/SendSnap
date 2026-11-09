@@ -5,6 +5,7 @@ import '../config/constants.dart';
 import '../services/rating_service.dart';
 import 'bouncing_card.dart';
 import 'glass_container.dart';
+import '../l10n/app_localizations.dart';
 
 /// A beautiful frosted glass modal dialog that encourages ratings
 /// and routes feedback thoughtfully based on user satisfaction.
@@ -57,6 +58,8 @@ class _RateUsDialogState extends State<RateUsDialog> with SingleTickerProviderSt
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
+
     return ScaleTransition(
       scale: _scaleAnimation,
       child: Dialog(
@@ -111,9 +114,9 @@ class _RateUsDialogState extends State<RateUsDialog> with SingleTickerProviderSt
                 const SizedBox(height: 18),
 
                 // Title
-                const Text(
-                  'Enjoying SendSnap?',
-                  style: TextStyle(
+                Text(
+                  l10n.rateEnjoyingTitle,
+                  style: const TextStyle(
                     fontSize: 22,
                     fontWeight: FontWeight.w800,
                     letterSpacing: -0.4,
@@ -123,10 +126,10 @@ class _RateUsDialogState extends State<RateUsDialog> with SingleTickerProviderSt
                 const SizedBox(height: 8),
 
                 // Description
-                const Text(
-                  'If SendSnap makes sending files between your devices effortless, please take a moment to rate us!',
+                Text(
+                  l10n.rateEnjoyingDesc(_storeName),
                   textAlign: TextAlign.center,
-                  style: TextStyle(
+                  style: const TextStyle(
                     fontSize: 13,
                     color: AppColors.textSecondary,
                     height: 1.4,
@@ -197,7 +200,7 @@ class _RateUsDialogState extends State<RateUsDialog> with SingleTickerProviderSt
                     ),
                     child: Center(
                       child: Text(
-                        _selectedRating >= 4 ? 'Rate on $_storeName' : 'Send us Feedback',
+                        _selectedRating >= 4 ? l10n.rateSubmit(_storeName) : l10n.rateFeedbackInstead,
                         style: const TextStyle(
                           color: Colors.white,
                           fontSize: 15,
@@ -216,9 +219,9 @@ class _RateUsDialogState extends State<RateUsDialog> with SingleTickerProviderSt
                     RatingService.markPostponed();
                     Navigator.of(context).pop();
                   },
-                  child: const Text(
-                    'Maybe Later',
-                    style: TextStyle(
+                  child: Text(
+                    l10n.rateLater,
+                    style: const TextStyle(
                       color: AppColors.textSecondary,
                       fontSize: 13,
                       fontWeight: FontWeight.w600,

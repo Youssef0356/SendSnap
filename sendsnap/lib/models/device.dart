@@ -1,3 +1,5 @@
+import '../services/bidi_helper.dart';
+
 class NearbyDevice {
   final String id;
   final String name;
@@ -52,7 +54,7 @@ class NearbyDevice {
 
   factory NearbyDevice.fromJson(Map<String, dynamic> json) => NearbyDevice(
     id: json['id'] as String? ?? '',
-    name: json['name'] as String? ?? 'Unknown',
+    name: BidiHelper.sanitizeFileName(json['name'] as String? ?? 'Unknown'),
     ip: json['ip'] as String? ?? '',
     port: json['port'] as int? ?? 53318,
     deviceType: json['deviceType'] as String? ?? 'unknown',

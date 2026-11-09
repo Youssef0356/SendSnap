@@ -1,9 +1,12 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:provider/provider.dart';
 import 'providers/device_provider.dart';
 import 'providers/transfer_provider.dart';
+import 'providers/locale_provider.dart';
+import 'l10n/app_localizations.dart';
 import 'services/tray_and_window_service.dart';
 import 'screens/splash_screen.dart';
 import 'screens/home_screen.dart';
@@ -51,6 +54,7 @@ void main(List<String> args) async {
       providers: [
         ChangeNotifierProvider(create: (_) => DeviceProvider()),
         ChangeNotifierProvider(create: (_) => TransferProvider()),
+        ChangeNotifierProvider(create: (_) => LocaleProvider()),
       ],
       child: const SendSnapApp(),
     ),
@@ -70,10 +74,30 @@ class _SendSnapAppState extends State<SendSnapApp> {
 
   @override
   Widget build(BuildContext context) {
+    final localeProv = Provider.of<LocaleProvider>(context);
+
     return MaterialApp(
       title: 'SendSnap',
       debugShowCheckedModeBanner: false,
-      theme: AppTheme.lightTheme(),
+      theme: AppTheme.lightTheme(isArabic: localeProv.isRTL),
+      locale: localeProv.locale,
+      supportedLocales: AppLocalizations.supportedLocales,
+      localizationsDelegates: const [
+        AppLocalizations.delegate,
+        GlobalMaterialLocalizations.delegate,
+        GlobalWidgetsLocalizations.delegate,
+        GlobalCupertinoLocalizations.delegate,
+      ],
+      localeResolutionCallback: (deviceLocale, supportedLocales) {
+        if (deviceLocale != null) {
+          for (final supportedLocale in supportedLocales) {
+            if (supportedLocale.languageCode == deviceLocale.languageCode) {
+              return supportedLocale;
+            }
+          }
+        }
+        return const Locale('en');
+      },
       navigatorKey: _navigatorKey,
       initialRoute: '/splash',
       routes: {
