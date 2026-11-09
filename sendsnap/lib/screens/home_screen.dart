@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../l10n/app_localizations.dart';
+import '../providers/locale_provider.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'dart:async';
@@ -471,6 +472,32 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
           const SizedBox(width: 8),
           Tooltip(
+            message: AppLocalizations.of(context)?.settingsLanguage ?? 'Language',
+            child: BouncingCard(
+              onTap: () => _showLanguageDialog(context),
+              child: Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.8),
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                    color: Colors.white.withValues(alpha: 0.9),
+                    width: 1,
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.04),
+                      blurRadius: 8,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
+                ),
+                child: const Icon(Icons.language_rounded, size: 20, color: AppColors.primary),
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Tooltip(
             message: AppLocalizations.of(context)?.settingsTitle ?? 'Settings',
             child: BouncingCard(
               onTap: () => Navigator.pushNamed(context, '/settings'),
@@ -499,6 +526,128 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
     );
   }
+
+  void _showLanguageDialog(BuildContext context) {
+    showDialog(
+      context: context,
+      barrierColor: Colors.black.withValues(alpha: 0.35),
+      builder: (dialogCtx) {
+        return Consumer<LocaleProvider>(
+          builder: (context, localeProv, _) {
+            final l10n = AppLocalizations.of(context);
+            return Dialog(
+              backgroundColor: Colors.transparent,
+              elevation: 0,
+              insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
+              child: GlassContainer(
+                blur: 24,
+                opacity: 0.90,
+                borderRadius: 24,
+                padding: const EdgeInsets.all(20),
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 360),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(8),
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              color: AppColors.primary.withValues(alpha: 0.12),
+                            ),
+                            child: const Icon(Icons.language_rounded, color: AppColors.primary, size: 20),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Text(
+                              l10n?.settingsLanguage ?? 'Language',
+                              style: const TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w700,
+                                color: AppColors.textPrimary,
+                              ),
+                            ),
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.close_rounded, size: 20, color: AppColors.textSecondary),
+                            onPressed: () => Navigator.pop(dialogCtx),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 16),
+                      ...LocaleProvider.supportedLanguages.map((option) {
+                        final isSelected = localeProv.currentCode == option.code;
+                        return Padding(
+                          padding: const EdgeInsets.only(bottom: 8),
+                          child: BouncingCard(
+                            onTap: () {
+                              localeProv.setLanguage(option.code);
+                              Navigator.pop(dialogCtx);
+                            },
+                            child: AnimatedContainer(
+                              duration: const Duration(milliseconds: 200),
+                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                              decoration: BoxDecoration(
+                                color: isSelected ? AppColors.primary : Colors.black.withValues(alpha: 0.04),
+                                borderRadius: BorderRadius.circular(16),
+                                border: Border.all(
+                                  color: isSelected ? AppColors.primary : Colors.black.withValues(alpha: 0.06),
+                                  width: 1.2,
+                                ),
+                                boxShadow: isSelected
+                                    ? [
+                                        BoxShadow(
+                                          color: AppColors.primary.withValues(alpha: 0.28),
+                                          blurRadius: 10,
+                                          offset: const Offset(0, 3),
+                                        ),
+                                      ]
+                                    : [],
+                              ),
+                              child: Row(
+                                children: [
+                                  Expanded(
+                                    child: Text(
+                                      option.nativeName,
+                                      style: TextStyle(
+                                        fontSize: 14,
+                                        fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+                                        color: isSelected ? Colors.white : AppColors.textPrimary,
+                                      ),
+                                    ),
+                                  ),
+                                  if (option.code != 'system')
+                                    Text(
+                                      option.englishName,
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        color: isSelected ? Colors.white.withValues(alpha: 0.8) : AppColors.textSecondary,
+                                      ),
+                                    ),
+                                  if (isSelected) ...[
+                                    const SizedBox(width: 8),
+                                    const Icon(Icons.check_circle_rounded, color: Colors.white, size: 18),
+                                  ],
+                                ],
+                              ),
+                            ),
+                          ),
+                        );
+                      }),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
   Widget _buildReadyState(BuildContext context, DeviceProvider devProv, TransferProvider transProv) {
     return Column(
       key: const ValueKey('ready_state'),
