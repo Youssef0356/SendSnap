@@ -79,10 +79,17 @@ class FileHandler {
     }
   }
   static String formatFileSize(int bytes) {
-    if (bytes < 1024) return '$bytes B';
-    if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(1)} KB';
-    if (bytes < 1024 * 1024 * 1024) return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
-    return '${(bytes / (1024 * 1024 * 1024)).toStringAsFixed(1)} GB';
+    final String raw;
+    if (bytes < 1024) {
+      raw = '$bytes B';
+    } else if (bytes < 1024 * 1024) {
+      raw = '${(bytes / 1024).toStringAsFixed(1)} KB';
+    } else if (bytes < 1024 * 1024 * 1024) {
+      raw = '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
+    } else {
+      raw = '${(bytes / (1024 * 1024 * 1024)).toStringAsFixed(1)} GB';
+    }
+    return BidiHelper.isolate(raw);
   }
   /// Opens a file using the system default application via OpenFilex.
   static Future<bool> openFile(String path) async {

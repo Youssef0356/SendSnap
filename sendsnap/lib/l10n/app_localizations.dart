@@ -138,6 +138,96 @@ abstract class AppLocalizations {
   /// **'Settings'**
   String get navSettings;
 
+  /// No description provided for @commonBack.
+  ///
+  /// In en, this message translates to:
+  /// **'Back'**
+  String get commonBack;
+
+  /// No description provided for @homeSendButton.
+  ///
+  /// In en, this message translates to:
+  /// **'SEND'**
+  String get homeSendButton;
+
+  /// No description provided for @homeSendSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Share files with nearby devices'**
+  String get homeSendSubtitle;
+
+  /// No description provided for @homeReceiveButton.
+  ///
+  /// In en, this message translates to:
+  /// **'RECEIVE'**
+  String get homeReceiveButton;
+
+  /// No description provided for @homeReceiveSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Make your device discoverable'**
+  String get homeReceiveSubtitle;
+
+  /// No description provided for @homeReceiverStatus.
+  ///
+  /// In en, this message translates to:
+  /// **'RECEIVER STATUS'**
+  String get homeReceiverStatus;
+
+  /// No description provided for @homeWifiConnected.
+  ///
+  /// In en, this message translates to:
+  /// **'Wi-Fi Connected'**
+  String get homeWifiConnected;
+
+  /// No description provided for @homeWifiDisconnected.
+  ///
+  /// In en, this message translates to:
+  /// **'No Wi-Fi (Tap for help)'**
+  String get homeWifiDisconnected;
+
+  /// No description provided for @homeDragHandle.
+  ///
+  /// In en, this message translates to:
+  /// **'DRAG'**
+  String get homeDragHandle;
+
+  /// No description provided for @homeQrCode.
+  ///
+  /// In en, this message translates to:
+  /// **'QR Code'**
+  String get homeQrCode;
+
+  /// No description provided for @homeConnectingWifi.
+  ///
+  /// In en, this message translates to:
+  /// **'Connecting over local Wi-Fi...'**
+  String get homeConnectingWifi;
+
+  /// No description provided for @homeIpCopied.
+  ///
+  /// In en, this message translates to:
+  /// **'IP address copied to clipboard!'**
+  String get homeIpCopied;
+
+  /// No description provided for @homeCameraPermission.
+  ///
+  /// In en, this message translates to:
+  /// **'Camera permission is required to scan QR codes.'**
+  String get homeCameraPermission;
+
+  /// No description provided for @homeScanToConnect.
+  ///
+  /// In en, this message translates to:
+  /// **'Scan to Connect'**
+  String get homeScanToConnect;
+
+  /// No description provided for @homeConnectDirectly.
+  ///
+  /// In en, this message translates to:
+  /// **'Connect directly to {name}'**
+  String homeConnectDirectly(String name);
+
   /// No description provided for @homeRadarSearching.
   ///
   /// In en, this message translates to:

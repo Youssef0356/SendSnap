@@ -27,6 +27,53 @@ class AppLocalizationsAr extends AppLocalizations {
   String get navSettings => 'الإعدادات';
 
   @override
+  String get commonBack => 'رجوع';
+
+  @override
+  String get homeSendButton => 'إرسال';
+
+  @override
+  String get homeSendSubtitle => 'مشاركة الملفات مع الأجهزة المجاورة';
+
+  @override
+  String get homeReceiveButton => 'استقبال';
+
+  @override
+  String get homeReceiveSubtitle => 'جعل جهازك مرئياً للآخرين';
+
+  @override
+  String get homeReceiverStatus => 'حالة الاستقبال';
+
+  @override
+  String get homeWifiConnected => 'متصل بشبكة Wi-Fi';
+
+  @override
+  String get homeWifiDisconnected => 'لا يوجد اتصال Wi-Fi (المساعدة)';
+
+  @override
+  String get homeDragHandle => 'سحب';
+
+  @override
+  String get homeQrCode => 'رمز QR';
+
+  @override
+  String get homeConnectingWifi => 'جارٍ الاتصال عبر شبكة Wi-Fi المحلية...';
+
+  @override
+  String get homeIpCopied => 'تم نسخ عنوان IP إلى الحافظة!';
+
+  @override
+  String get homeCameraPermission => 'مطلوب إذن الكاميرا لمسح رموز QR.';
+
+  @override
+  String get homeScanToConnect => 'امسح الرمز للاتصال';
+
+  @override
+  String homeConnectDirectly(String name) {
+    return 'الاتصال مباشرة بـ $name';
+  }
+
+  @override
   String get homeRadarSearching => 'جارٍ البحث عن الأجهزة المجاورة...';
 
   @override

@@ -347,6 +347,7 @@ class _DraggableFileTokenState extends State<DraggableFileToken> {
 
   /// The visual card for each file
   Widget _buildFileCardContent(File file, {required bool isDragging, bool isFullWidth = false}) {
+    final l10n = AppLocalizations.of(context);
     final fileName = p.basename(file.path);
     final ext = p.extension(file.path).replaceAll('.', '').toUpperCase();
     final typeInfo = _getFileTypeInfo(ext);
@@ -456,14 +457,14 @@ class _DraggableFileTokenState extends State<DraggableFileToken> {
               color: AppColors.primary.withValues(alpha: 0.1),
               borderRadius: BorderRadius.circular(8),
             ),
-            child: const Row(
+            child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Icon(Icons.touch_app_rounded, size: 12, color: AppColors.primary),
-                SizedBox(width: 3),
+                const Icon(Icons.touch_app_rounded, size: 12, color: AppColors.primary),
+                const SizedBox(width: 3),
                 Text(
-                  'DRAG',
-                  style: TextStyle(
+                  l10n?.homeDragHandle ?? 'DRAG',
+                  style: const TextStyle(
                     fontSize: 9.5,
                     fontWeight: FontWeight.w800,
                     color: AppColors.primary,

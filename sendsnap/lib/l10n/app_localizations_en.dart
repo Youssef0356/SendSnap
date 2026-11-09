@@ -27,6 +27,54 @@ class AppLocalizationsEn extends AppLocalizations {
   String get navSettings => 'Settings';
 
   @override
+  String get commonBack => 'Back';
+
+  @override
+  String get homeSendButton => 'SEND';
+
+  @override
+  String get homeSendSubtitle => 'Share files with nearby devices';
+
+  @override
+  String get homeReceiveButton => 'RECEIVE';
+
+  @override
+  String get homeReceiveSubtitle => 'Make your device discoverable';
+
+  @override
+  String get homeReceiverStatus => 'RECEIVER STATUS';
+
+  @override
+  String get homeWifiConnected => 'Wi-Fi Connected';
+
+  @override
+  String get homeWifiDisconnected => 'No Wi-Fi (Tap for help)';
+
+  @override
+  String get homeDragHandle => 'DRAG';
+
+  @override
+  String get homeQrCode => 'QR Code';
+
+  @override
+  String get homeConnectingWifi => 'Connecting over local Wi-Fi...';
+
+  @override
+  String get homeIpCopied => 'IP address copied to clipboard!';
+
+  @override
+  String get homeCameraPermission =>
+      'Camera permission is required to scan QR codes.';
+
+  @override
+  String get homeScanToConnect => 'Scan to Connect';
+
+  @override
+  String homeConnectDirectly(String name) {
+    return 'Connect directly to $name';
+  }
+
+  @override
   String get homeRadarSearching => 'Looking for nearby devices...';
 
   @override

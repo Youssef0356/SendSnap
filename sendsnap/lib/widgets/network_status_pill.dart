@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../config/constants.dart';
+import '../l10n/app_localizations.dart';
 import '../providers/device_provider.dart';
 import 'glass_container.dart';
 import 'bouncing_card.dart';
@@ -48,6 +49,8 @@ class _NetworkStatusPillState extends State<NetworkStatusPill>
     final isConnected = ip != null && ip != '0.0.0.0' && ip.isNotEmpty;
     final dotColor = isConnected ? AppColors.success : AppColors.warning;
 
+    final l10n = AppLocalizations.of(context);
+
     return BouncingCard(
       onTap: () {
         HapticFeedback.selectionClick();
@@ -94,7 +97,9 @@ class _NetworkStatusPillState extends State<NetworkStatusPill>
 
             // Network Info Text
             Text(
-              isConnected ? 'Wi-Fi Connected' : 'No Wi-Fi (Tap for help)',
+              isConnected
+                  ? (l10n?.homeWifiConnected ?? 'Wi-Fi Connected')
+                  : (l10n?.homeWifiDisconnected ?? 'No Wi-Fi (Tap for help)'),
               style: TextStyle(
                 fontSize: 12,
                 fontWeight: FontWeight.w600,

@@ -359,6 +359,9 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
   Widget _buildHeader(BuildContext context, DeviceProvider devProv) {
+    final l10n = AppLocalizations.of(context);
+    final isBusy = devProv.isAdvertising || devProv.isDiscovering;
+
     return GlassContainer(
       blur: 25,
       opacity: 0.70,
@@ -373,6 +376,46 @@ class _HomeScreenState extends State<HomeScreen> {
       ],
       child: Row(
         children: [
+          if (isBusy) ...[
+            Tooltip(
+              message: l10n?.commonBack ?? 'Back',
+              child: BouncingCard(
+                onTap: () {
+                  devProv.stopAll();
+                  setState(() {
+                    _selectedFiles = [];
+                  });
+                },
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: AppColors.error.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(18),
+                    border: Border.all(
+                      color: AppColors.error.withValues(alpha: 0.25),
+                      width: 1,
+                    ),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.arrow_back_rounded, size: 18, color: AppColors.error),
+                      const SizedBox(width: 4),
+                      Text(
+                        l10n?.commonBack ?? 'Back',
+                        style: const TextStyle(
+                          color: AppColors.error,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 13,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(width: 10),
+          ],
           Container(
             padding: const EdgeInsets.all(3),
             decoration: BoxDecoration(
@@ -649,13 +692,14 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _buildReadyState(BuildContext context, DeviceProvider devProv, TransferProvider transProv) {
+    final l10n = AppLocalizations.of(context);
     return Column(
       key: const ValueKey('ready_state'),
       mainAxisSize: MainAxisSize.min,
       children: [
         _buildAppleHeroButton(
-          title: 'SEND',
-          subtitle: 'Share files with nearby devices',
+          title: l10n?.homeSendButton ?? 'SEND',
+          subtitle: l10n?.homeSendSubtitle ?? 'Share files with nearby devices',
           icon: Icons.arrow_upward_rounded,
           gradient: AppColors.sendGradient,
           shadowColor: AppColors.primary,
@@ -663,8 +707,8 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
         const SizedBox(height: AppSpacing.l),
         _buildAppleHeroButton(
-          title: 'RECEIVE',
-          subtitle: 'Make your device discoverable',
+          title: l10n?.homeReceiveButton ?? 'RECEIVE',
+          subtitle: l10n?.homeReceiveSubtitle ?? 'Make your device discoverable',
           icon: Icons.arrow_downward_rounded,
           gradient: AppColors.receiveGradient,
           shadowColor: AppColors.receivePrimary,
@@ -938,6 +982,7 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
   Widget _buildBusyState(BuildContext context, DeviceProvider devProv, TransferProvider transProv) {
+    final l10n = AppLocalizations.of(context);
     return Column(
       key: const ValueKey('busy_state'),
       mainAxisSize: MainAxisSize.min,
@@ -945,8 +990,8 @@ class _HomeScreenState extends State<HomeScreen> {
         RadarWidget(
           active: true,
           label: devProv.isAdvertising
-              ? 'Ready to receive files'
-              : 'Searching for nearby devices...',
+              ? (l10n?.homeRadarReady ?? 'Ready to receive files')
+              : (l10n?.homeRadarSearching ?? 'Searching for nearby devices...'),
         ),
         if (devProv.isDiscovering) ...[
           const SizedBox(height: AppSpacing.m),
@@ -988,14 +1033,14 @@ class _HomeScreenState extends State<HomeScreen> {
                     ),
                   ],
                 ),
-                child: const Row(
+                child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Icon(Icons.add_photo_alternate_rounded, size: 18, color: Colors.white),
-                    SizedBox(width: 8),
+                    const Icon(Icons.add_photo_alternate_rounded, size: 18, color: Colors.white),
+                    const SizedBox(width: 8),
                     Text(
-                      'Choose files to send',
-                      style: TextStyle(
+                      l10n?.homeSendSubtitle ?? 'Choose files to send',
+                      style: const TextStyle(
                         fontSize: 13,
                         fontWeight: FontWeight.w700,
                         color: Colors.white,
@@ -1039,7 +1084,10 @@ class _HomeScreenState extends State<HomeScreen> {
                     Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Text('RECEIVER STATUS', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: AppColors.textSecondary, letterSpacing: 0.8)),
+                        Text(
+                          l10n?.homeReceiverStatus ?? 'RECEIVER STATUS',
+                          style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: AppColors.textSecondary, letterSpacing: 0.8),
+                        ),
                         const SizedBox(height: 2),
                         Text(
                           AppLocalizations.of(context)?.homeRadarReady ?? 'Ready to Receive',
@@ -1064,12 +1112,15 @@ class _HomeScreenState extends State<HomeScreen> {
                         ),
                       ],
                     ),
-                    child: const Row(
+                    child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Icon(Icons.qr_code_2_rounded, size: 18, color: Colors.white),
-                        SizedBox(width: 6),
-                        Text('QR Code', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13)),
+                        const Icon(Icons.qr_code_2_rounded, size: 18, color: Colors.white),
+                        const SizedBox(width: 6),
+                        Text(
+                          l10n?.homeQrCode ?? 'QR Code',
+                          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13),
+                        ),
                       ],
                     ),
                   ),
@@ -1155,14 +1206,14 @@ class _HomeScreenState extends State<HomeScreen> {
                 width: 1,
               ),
             ),
-            child: const Row(
+            child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Icon(Icons.close_rounded, size: 18, color: AppColors.error),
-                SizedBox(width: 8),
+                const Icon(Icons.close_rounded, size: 18, color: AppColors.error),
+                const SizedBox(width: 8),
                 Text(
-                  'Cancel',
-                  style: TextStyle(
+                  l10n?.transferCancel ?? 'Cancel',
+                  style: const TextStyle(
                     color: AppColors.error,
                     fontWeight: FontWeight.bold,
                     fontSize: 14,
@@ -1455,6 +1506,7 @@ class _HomeScreenState extends State<HomeScreen> {
   }
   void _showReceiverQrCode(BuildContext context, DeviceProvider devProv) {
     final ip = devProv.localIp ?? '';
+    final l10n = AppLocalizations.of(context);
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
@@ -1487,9 +1539,9 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
               ),
               const SizedBox(height: 24),
-              const Text(
-                'Scan to Connect',
-                style: TextStyle(
+              Text(
+                l10n?.homeScanToConnect ?? 'Scan to Connect',
+                style: const TextStyle(
                   fontSize: 22,
                   fontWeight: FontWeight.w800,
                   letterSpacing: -0.5,
@@ -1498,7 +1550,7 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
               const SizedBox(height: 6),
               Text(
-                'Connect directly to ${devProv.displayName}',
+                l10n?.homeConnectDirectly(devProv.displayName) ?? 'Connect directly to ${devProv.displayName}',
                 style: const TextStyle(color: AppColors.textSecondary, fontSize: 14),
               ),
               const SizedBox(height: 24),
@@ -1529,7 +1581,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 onTap: () {
                   Clipboard.setData(ClipboardData(text: ip));
                   ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('IP address copied to clipboard!'), duration: Duration(seconds: 2)),
+                    SnackBar(content: Text(l10n?.homeIpCopied ?? 'IP address copied to clipboard!'), duration: const Duration(seconds: 2)),
                   );
                 },
                 child: Container(
@@ -1629,12 +1681,13 @@ class _HomeScreenState extends State<HomeScreen> {
   }
   Future<void> _handleScanQr(DeviceProvider devProv, TransferProvider transProv) async {
     final messenger = ScaffoldMessenger.of(context);
+    final l10n = AppLocalizations.of(context);
     final status = await Permission.camera.request();
     if (!status.isGranted) {
       if (mounted) {
         messenger.showSnackBar(
-          const SnackBar(
-            content: Text('Camera permission is required to scan QR codes.'),
+          SnackBar(
+            content: Text(l10n?.homeCameraPermission ?? 'Camera permission is required to scan QR codes.'),
             backgroundColor: AppColors.error,
           ),
         );
@@ -1800,11 +1853,14 @@ class _HomeScreenState extends State<HomeScreen> {
               const CircularProgressIndicator(),
               const SizedBox(height: AppSpacing.l),
               Text(
-                'Connecting to $deviceName...',
+                AppLocalizations.of(context)?.transferConnecting(deviceName) ?? 'Connecting to $deviceName...',
                 style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
               ),
               const SizedBox(height: 6),
-              const Text('Connecting over local Wi-Fi...', style: TextStyle(color: AppColors.textSecondary, fontSize: 13)),
+              Text(
+                AppLocalizations.of(context)?.homeConnectingWifi ?? 'Connecting over local Wi-Fi...',
+                style: const TextStyle(color: AppColors.textSecondary, fontSize: 13),
+              ),
             ],
           ),
         ),

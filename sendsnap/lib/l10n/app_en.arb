@@ -8,6 +8,27 @@
   "navReceived": "Received Files",
   "navSettings": "Settings",
 
+  "commonBack": "Back",
+  "homeSendButton": "SEND",
+  "homeSendSubtitle": "Share files with nearby devices",
+  "homeReceiveButton": "RECEIVE",
+  "homeReceiveSubtitle": "Make your device discoverable",
+  "homeReceiverStatus": "RECEIVER STATUS",
+  "homeWifiConnected": "Wi-Fi Connected",
+  "homeWifiDisconnected": "No Wi-Fi (Tap for help)",
+  "homeDragHandle": "DRAG",
+  "homeQrCode": "QR Code",
+  "homeConnectingWifi": "Connecting over local Wi-Fi...",
+  "homeIpCopied": "IP address copied to clipboard!",
+  "homeCameraPermission": "Camera permission is required to scan QR codes.",
+  "homeScanToConnect": "Scan to Connect",
+  "homeConnectDirectly": "Connect directly to {name}",
+  "@homeConnectDirectly": {
+    "placeholders": {
+      "name": { "type": "String" }
+    }
+  },
+
   "homeRadarSearching": "Looking for nearby devices...",
   "homeRadarReady": "Ready to send and receive",
   "homeTroubleshoot": "Troubleshoot",

@@ -28,6 +28,54 @@ class AppLocalizationsEs extends AppLocalizations {
   String get navSettings => 'Ajustes';
 
   @override
+  String get commonBack => 'Atrás';
+
+  @override
+  String get homeSendButton => 'ENVIAR';
+
+  @override
+  String get homeSendSubtitle => 'Compartir archivos con dispositivos cercanos';
+
+  @override
+  String get homeReceiveButton => 'RECIBIR';
+
+  @override
+  String get homeReceiveSubtitle => 'Hacer tu dispositivo visible';
+
+  @override
+  String get homeReceiverStatus => 'ESTADO DEL RECEPTOR';
+
+  @override
+  String get homeWifiConnected => 'Wi-Fi conectado';
+
+  @override
+  String get homeWifiDisconnected => 'Sin Wi-Fi (Toca para ayuda)';
+
+  @override
+  String get homeDragHandle => 'ARRASTRAR';
+
+  @override
+  String get homeQrCode => 'Código QR';
+
+  @override
+  String get homeConnectingWifi => 'Conectando por Wi-Fi local...';
+
+  @override
+  String get homeIpCopied => '¡Dirección IP copiada al portapapeles!';
+
+  @override
+  String get homeCameraPermission =>
+      'Se requiere permiso de cámara para escanear códigos QR.';
+
+  @override
+  String get homeScanToConnect => 'Escanear para conectar';
+
+  @override
+  String homeConnectDirectly(String name) {
+    return 'Conectar directamente a $name';
+  }
+
+  @override
   String get homeRadarSearching => 'Buscando dispositivos cercanos...';
 
   @override
